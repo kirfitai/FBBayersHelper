@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+
+{% block title %}Редактирование сетапа - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1>Редактирование сетапа</h1>
+        <p class="text-muted">Измените настройки сетапа "{{ setup.name }}"</p>
+        
+        <form method="POST">
+            {{ form.hidden_tag() }}
+            
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Основные настройки</h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        {{ form.name.label(class="form-label") }}
+                        {{ form.name(class="form-control") }}
+                        {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.name.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.check_interval.label(class="form-label") }}
+                        {{ form.check_interval(class="form-control") }}
+                        {% if form.check_interval.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.check_interval.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mb-4">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Пороговые значения</h5>
+                    <button type="button" class="btn btn-sm btn-success" id="add-threshold">Добавить условие</button>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <strong>Как это работает:</strong> Укажите пары "затраты - количество конверсий". 
+                        Если объявление потратило сумму, но не достигло указанного количества конверсий, оно будет отключено.
+                    </div>
+                    
+                    <div id="thresholds-container">
+                        {% for threshold in form.thresholds %}
+                        <div class="form-threshold">
+                            <div class="row">
+                                <div class="col-md-5">
+                                    {{ threshold.spend.label(class="form-label") }}
+                                    {{ threshold.spend(class="form-control") }}
+                                </div>
+                                <div class="col-md-5">
+                                    {{ threshold.conversions.label(class="form-label") }}
+                                    {{ threshold.conversions(class="form-control") }}
+                                </div>
+                                <div class="col-md-2 d-flex align-items-end">
+                                    <button type="button" class="btn btn-danger remove-threshold">Удалить</button>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mt-3 d-flex justify-content-between">
+                <a href="{{ url_for('main.setups') }}" class="btn btn-secondary">Отмена</a>
+                {{ form.submit(class="btn btn-primary") }}
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Функция для добавления нового порога
+    document.getElementById('add-threshold').addEventListener('click', function() {
+        const container = document.getElementById('thresholds-container');
+        const index = container.children.length;
+        
+        // Проверка на максимальное количество порогов
+        if (index >= 15) {
+            alert('Достигнуто максимальное количество условий (15)');
+            return;
+        }
+        
+        // Клонирование первого элемента и очистка значений
+        const template = container.children[0].cloneNode(true);
+        const inputs = template.querySelectorAll('input');
+        
+        inputs.forEach(input => {
+            // Обновление имен и идентификаторов полей
+            const name = input.name.replace(/thresholds-\d+-/, `thresholds-${index}-`);
+            input.name = name;
+            input.id = name;
+            input.value = '';
+        });
+        
+        // Добавление кнопки удаления
+        const removeBtn = template.querySelector('.remove-threshold');
+        removeBtn.addEventListener('click', function() {
+            template.remove();
+            updateIndexes();
+        });
+        
+        container.appendChild(template);
+    });
+    
+    // Добавление обработчиков для существующих кнопок удаления
+    document.querySelectorAll('.remove-threshold').forEach(button => {
+        button.addEventListener('click', function() {
+            // Проверка, что есть хотя бы один порог
+            const container = document.getElementById('thresholds-container');
+            if (container.children.length > 1) {
+                this.closest('.form-threshold').remove();
+                updateIndexes();
+            } else {
+                alert('Должен быть как минимум один порог!');
+            }
+        });
+    });
+    
+    // Обновление индексов после удаления
+    function updateIndexes() {
+        const container = document.getElementById('thresholds-container');
+        const thresholds = container.querySelectorAll('.form-threshold');
+        
+        thresholds.forEach((threshold, index) => {
+            const inputs = threshold.querySelectorAll('input');
+            inputs.forEach(input => {
+                input.name = input.name.replace(/thresholds-\d+-/, `thresholds-${index}-`);
+                input.id = input.name;
+            });
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,23 @@
+# Виртуальное окружение
+venv/
+venv311/
+
+# База данных SQLite
+*.db
+app.db
+
+# Кэш Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Файлы настроек
+.env
+.flaskenv
+
+# Логи
+*.log
+
+# IDE-специфичные файлы
+.idea/
+.vscode/

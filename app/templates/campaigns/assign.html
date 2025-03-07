@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+
+{% block title %}Назначение кампании - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Назначение кампании</h3>
+            </div>
+            <div class="card-body">
+                {% if not form.setup_id.choices %}
+                <div class="alert alert-warning">
+                    <h4 class="alert-heading">Нет доступных сетапов</h4>
+                    <p>Сначала необходимо создать хотя бы один сетап.</p>
+                    <a href="{{ url_for('main.create_setup') }}" class="btn btn-primary">Создать сетап</a>
+                </div>
+                {% elif not form.campaign_ids.choices %}
+                <div class="alert alert-warning">
+                    <h4 class="alert-heading">Нет доступных кампаний</h4>
+                    <p>Необходимо обновить список кампаний из Facebook.</p>
+                    <form method="POST" action="{{ url_for('main.refresh_campaigns') }}">
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                        <button type="submit" class="btn btn-primary">Обновить список кампаний</button>
+                    </form>
+                </div>
+                {% else %}
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.setup_id.label(class="form-label") }}
+                        {{ form.setup_id(class="form-select") }}
+                        {% if form.setup_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.setup_id.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.campaign_ids.label(class="form-label") }}
+                        {{ form.campaign_ids(class="form-select") }}
+                        {% if form.campaign_ids.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.campaign_ids.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('main.campaigns') }}" class="btn btn-secondary">Вернуться к списку кампаний</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

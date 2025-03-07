@@ -1,0 +1,20 @@
+# Facebook API
+facebook-business==18.0.0
+
+# Flask и расширения
+Flask==2.2.3
+Flask-Login==0.6.2
+Flask-Migrate==4.0.4
+Flask-SQLAlchemy==3.0.3
+Flask-WTF==1.1.1
+WTForms==3.0.1
+
+# База данных
+SQLAlchemy==2.0.4
+
+# Планировщик задач
+APScheduler==3.10.1
+
+# Утилиты
+python-dotenv==1.0.0
+pandas==2.0.3
