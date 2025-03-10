@@ -29,20 +29,25 @@ class RegistrationForm(FlaskForm):
 
 class FacebookAPIForm(FlaskForm):
     access_token = StringField('Access Token', validators=[DataRequired()])
-    app_id = StringField('App ID', validators=[DataRequired()])
-    app_secret = StringField('App Secret', validators=[DataRequired()])
+    app_id = StringField('App ID', validators=[Optional()])
+    app_secret = StringField('App Secret', validators=[Optional()])
     account_id = StringField('Account ID (act_XXXXXXXX)', validators=[DataRequired()])
     submit = SubmitField('Сохранить')
 
 class FacebookTokenForm(FlaskForm):
     name = StringField('Название токена', validators=[DataRequired()])
     access_token = StringField('Access Token', validators=[DataRequired()])
-    app_id = StringField('App ID', validators=[DataRequired()])
-    app_secret = StringField('App Secret', validators=[DataRequired()])
-    account_id = StringField('Account ID (act_XXXXXXXX)', validators=[DataRequired()])
+    app_id = StringField('App ID', validators=[Optional()])
+    app_secret = StringField('App Secret', validators=[Optional()])
+    account_id = StringField('ID аккаунтов (через запятую)', validators=[DataRequired()])
+    use_proxy = BooleanField('Использовать прокси')
     proxy_url = StringField('Proxy URL (http://username:password@host:port)', validators=[Optional()])
     submit = SubmitField('Добавить токен')
 
 class CheckTokenForm(FlaskForm):
     token_id = HiddenField('Token ID', validators=[DataRequired()])
     submit = SubmitField('Проверить')
+
+class RefreshTokenCampaignsForm(FlaskForm):
+    token_id = HiddenField('Token ID', validators=[DataRequired()])
+    submit = SubmitField('Обновить кампании')

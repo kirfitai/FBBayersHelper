@@ -21,10 +21,6 @@
         border-left: 5px solid #ffc107;
     }
     
-    .token-active {
-        box-shadow: 0 0 15px rgba(40, 167, 69, 0.5);
-    }
-    
     .token-field {
         padding: 10px;
         border-radius: 5px;
@@ -43,12 +39,6 @@
         background-color: rgba(255, 193, 7, 0.1);
     }
     
-    .btn-check-token {
-        position: absolute;
-        right: 20px;
-        top: 10px;
-    }
-    
     .token-status-icon {
         font-size: 1.2rem;
         margin-right: 5px;
@@ -60,6 +50,26 @@
     
     .token-form {
         margin-bottom: 30px;
+    }
+    
+    .account-badge {
+        display: inline-block;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 30px;
+        padding: 2px 10px;
+        margin-right: 5px;
+        margin-bottom: 5px;
+        font-size: 0.8rem;
+    }
+    
+    .account-badge .badge {
+        margin-left: 5px;
+        font-size: 0.7rem;
+    }
+    
+    .proxy-toggle {
+        display: none;
     }
 </style>
 {% endblock %}
@@ -80,9 +90,7 @@
                             <div class="row" id="tokens-container">
                                 {% for token in tokens %}
                                     <div class="col-md-12">
-                                        <div class="card token-card 
-                                            token-{{ token.status }} 
-                                            {% if current_user.active_token_id == token.id %}token-active{% endif %}">
+                                        <div class="card token-card token-{{ token.status }}">
                                             <div class="card-header d-flex justify-content-between align-items-center">
                                                 <h5 class="mb-0">
                                                     {% if token.status == 'valid' %}
@@ -93,16 +101,22 @@
                                                         <span class="token-status-icon text-warning">?</span>
                                                     {% endif %}
                                                     {{ token.name }}
-                                                    {% if current_user.active_token_id == token.id %}
-                                                        <span class="badge bg-success">Активный</span>
-                                                    {% endif %}
                                                 </h5>
-                                                <form action="{{ url_for('auth.check_token', token_id=token.id) }}" method="post" class="d-inline">
-                                                    {{ form.csrf_token }}
-                                                    <button type="submit" class="btn btn-sm btn-outline-primary">
-                                                        Проверить
-                                                    </button>
-                                                </form>
+                                                <div>
+                                                    <form action="{{ url_for('auth.refresh_token_campaigns', token_id=token.id) }}" method="post" class="d-inline">
+                                                        {{ form.csrf_token }}
+                                                        <button type="submit" class="btn btn-sm btn-outline-success" 
+                                                                {% if token.status != 'valid' %}disabled{% endif %}>
+                                                            Обновить кампании
+                                                        </button>
+                                                    </form>
+                                                    <form action="{{ url_for('auth.check_token', token_id=token.id) }}" method="post" class="d-inline">
+                                                        {{ form.csrf_token }}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                            Проверить
+                                                        </button>
+                                                    </form>
+                                                </div>
                                             </div>
                                             <div class="card-body">
                                                 <div class="token-field token-field-{{ token.status }}">
@@ -111,11 +125,22 @@
                                                 </div>
                                                 <div class="row">
                                                     <div class="col-md-6">
-                                                        <p><strong>App ID:</strong> {{ token.app_id }}</p>
-                                                        <p><strong>Account ID:</strong> {{ token.account_id }}</p>
+                                                        <p><strong>App ID:</strong> {{ token.app_id or 'Не указан' }}</p>
+                                                        <p><strong>App Secret:</strong> {{ token.app_secret|truncate(10, True, '...') if token.app_secret else 'Не указан' }}</p>
+                                                        <p>
+                                                            <strong>Прокси:</strong> 
+                                                            {% if token.use_proxy %}
+                                                                {% if token.proxy_url %}
+                                                                    {{ token.proxy_url }}
+                                                                {% else %}
+                                                                    <span class="text-warning">Включено, но URL не указан</span>
+                                                                {% endif %}
+                                                            {% else %}
+                                                                <span class="text-muted">Не используется</span>
+                                                            {% endif %}
+                                                        </p>
                                                     </div>
                                                     <div class="col-md-6">
-                                                        <p><strong>Прокси:</strong> {{ token.proxy_url or 'Не указан' }}</p>
                                                         <p>
                                                             <strong>Статус:</strong> 
                                                             {% if token.status == 'valid' %}
@@ -126,43 +151,47 @@
                                                                 <span class="text-warning">Не проверен</span>
                                                             {% endif %}
                                                         </p>
+                                                        <p>
+                                                            <strong>Последняя проверка:</strong> 
+                                                            {% if token.last_checked %}
+                                                                {{ token.last_checked.strftime('%d.%m.%Y %H:%M') }}
+                                                            {% else %}
+                                                                <span class="text-muted">Не проверялся</span>
+                                                            {% endif %}
+                                                        </p>
                                                     </div>
                                                 </div>
                                                 
+                                                {% if token.accounts.count() > 0 %}
+                                                <div class="mt-3">
+                                                    <strong>Отслеживаемые аккаунты:</strong><br>
+                                                    {% for account in token.accounts %}
+                                                    <span class="account-badge">
+                                                        {{ account.account_name or account.account_id }}
+                                                        {% if account.campaign_count > 0 %}
+                                                        <span class="badge bg-secondary">{{ account.campaign_count }} кампаний</span>
+                                                        {% endif %}
+                                                    </span>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                                
+                                                {% if token.error_message %}
+                                                <div class="mt-3 alert alert-danger">
+                                                    <strong>Ошибка:</strong> {{ token.error_message }}
+                                                </div>
+                                                {% endif %}
+                                                
                                                 <div class="row token-actions">
                                                     <div class="col-12">
-                                                        {% if token.error_message %}
-                                                            <div class="alert alert-danger">
-                                                                <strong>Ошибка:</strong> {{ token.error_message }}
-                                                            </div>
-                                                        {% endif %}
-                                                        
-                                                        <div class="btn-group" role="group">
-                                                            {% if token.status == 'valid' and current_user.active_token_id != token.id %}
-                                                            <form action="{{ url_for('auth.activate_token', token_id=token.id) }}" method="post" class="d-inline">
-                                                                {{ form.csrf_token }}
-                                                                <button type="submit" class="btn btn-success me-2">
-                                                                    Сделать активным
-                                                                </button>
-                                                            </form>
-                                                            {% endif %}
-                                                            
-                                                            <form action="{{ url_for('auth.delete_token', token_id=token.id) }}" method="post" class="d-inline">
-                                                                {{ form.csrf_token }}
-                                                                <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите удалить этот токен?')">
-                                                                    Удалить
-                                                                </button>
-                                                            </form>
-                                                        </div>
+                                                        <form action="{{ url_for('auth.delete_token', token_id=token.id) }}" method="post" class="d-inline">
+                                                            {{ form.csrf_token }}
+                                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите удалить этот токен?')">
+                                                                Удалить
+                                                            </button>
+                                                        </form>
                                                     </div>
                                                 </div>
-                                            </div>
-                                            <div class="card-footer text-muted">
-                                                {% if token.last_checked %}
-                                                    Последняя проверка: {{ token.last_checked.strftime('%d.%m.%Y %H:%M') }}
-                                                {% else %}
-                                                    Токен еще не проверялся
-                                                {% endif %}
                                             </div>
                                         </div>
                                     </div>
@@ -222,6 +251,7 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
                                 </div>
                                 
                                 <div class="mb-3">
@@ -234,11 +264,12 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
                                 </div>
                                 
                                 <div class="mb-3">
                                     {{ token_form.account_id.label(class="form-label") }}
-                                    {{ token_form.account_id(class="form-control") }}
+                                    {{ token_form.account_id(class="form-control", placeholder="act_XXXXXXXX, act_YYYYYYYY") }}
                                     {% if token_form.account_id.errors %}
                                     <div class="invalid-feedback d-block">
                                         {% for error in token_form.account_id.errors %}
@@ -246,9 +277,15 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
+                                    <div class="form-text">Можно указать несколько ID аккаунтов через запятую. Префикс "act_" можно не указывать.</div>
                                 </div>
                                 
-                                <div class="mb-3">
+                                <div class="mb-3 form-check">
+                                    {{ token_form.use_proxy(class="form-check-input", id="use_proxy_checkbox") }}
+                                    {{ token_form.use_proxy.label(class="form-check-label") }}
+                                </div>
+                                
+                                <div class="mb-3 proxy-toggle" id="proxy_url_container">
                                     {{ token_form.proxy_url.label(class="form-label") }}
                                     {{ token_form.proxy_url(class="form-control") }}
                                     {% if token_form.proxy_url.errors %}
@@ -258,7 +295,7 @@
                                         {% endfor %}
                                     </div>
                                     {% endif %}
-                                    <div class="form-text">Необязательно. Формат: http://username:password@host:port</div>
+                                    <div class="form-text">Формат: http://username:password@host:port</div>
                                 </div>
                                 
                                 <div class="d-grid">
@@ -288,7 +325,7 @@
                                 <li><span class="text-danger">⚠</span> <strong>Не работает</strong> - токен недействителен</li>
                                 <li><span class="text-warning">?</span> <strong>Не проверен</strong> - токен еще не проверялся</li>
                             </ul>
-                            <p>Активный токен используется для всех операций с Facebook API.</p>
+                            <p>Каждый токен может отслеживать несколько рекламных аккаунтов. Система автоматически выбирает подходящий токен для работы с кампаниями.</p>
                         </div>
                     </div>
                 </div>
@@ -296,4 +333,24 @@
         </div>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Управление отображением поля прокси
+    const useProxyCheckbox = document.getElementById('use_proxy_checkbox');
+    const proxyUrlContainer = document.getElementById('proxy_url_container');
+    
+    if (useProxyCheckbox && proxyUrlContainer) {
+        // Инициализация при загрузке страницы
+        proxyUrlContainer.style.display = useProxyCheckbox.checked ? 'block' : 'none';
+        
+        // Обработчик изменения чекбокса
+        useProxyCheckbox.addEventListener('change', function() {
+            proxyUrlContainer.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+});
+</script>
 {% endblock %}

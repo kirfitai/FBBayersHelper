@@ -11,6 +11,7 @@ from flask import Flask
 from app import create_app, db
 from app.models.user import User
 from app.models.setup import Setup, CampaignSetup
+from app.models.token import FacebookToken, FacebookTokenAccount
 from app.services.fb_api_client import FacebookAdClient
 from app.services.ad_monitor import AdMonitor
 
@@ -36,6 +37,40 @@ jobstores = {
 
 scheduler = BackgroundScheduler(jobstores=jobstores)
 
+def find_suitable_token(user, campaign_id, account_id=None):
+    """
+    Находит подходящий токен для работы с кампанией
+    
+    Args:
+        user (User): Объект пользователя
+        campaign_id (str): ID кампании
+        account_id (str, optional): ID рекламного аккаунта
+    
+    Returns:
+        FacebookToken: Объект токена или None, если подходящий токен не найден
+    """
+    # Если известен ID аккаунта, ищем токены с доступом к нему
+    if account_id:
+        # Находим все токены пользователя, имеющие доступ к этому аккаунту и имеющие статус 'valid'
+        token_accounts = FacebookTokenAccount.query.join(FacebookToken).filter(
+            FacebookTokenAccount.account_id == account_id,
+            FacebookToken.user_id == user.id,
+            FacebookToken.status == 'valid'
+        ).all()
+        
+        # Если нашли подходящие токены, возвращаем первый
+        if token_accounts:
+            return token_accounts[0].token
+    
+    # Если аккаунт неизвестен или токены для него не найдены,
+    # вернем любой действующий токен пользователя
+    valid_token = FacebookToken.query.filter_by(
+        user_id=user.id,
+        status='valid'
+    ).first()
+    
+    return valid_token
+
 def check_campaign(user_id, campaign_setup_id):
     """
     Проверка кампании по расписанию
@@ -59,19 +94,44 @@ def check_campaign(user_id, campaign_setup_id):
                 logger.warning(f"Setup {campaign_setup.setup_id} is inactive or deleted")
                 return
             
-            # Получение пользователя и его учетных данных
+            # Получение пользователя
             user = User.query.get(user_id)
-            if not user or not user.fb_access_token:
-                logger.warning(f"User {user_id} has no Facebook API credentials")
+            if not user:
+                logger.warning(f"User {user_id} not found")
                 return
             
-            # Инициализация клиента FB API
-            fb_client = FacebookAdClient(
-                access_token=user.fb_access_token,
-                app_id=user.fb_app_id,
-                app_secret=user.fb_app_secret,
-                ad_account_id=user.fb_account_id
-            )
+            # Получение ID аккаунта из ID кампании (если возможно)
+            # Формат ID кампании в FB обычно: act_123456789_111111
+            campaign_id = campaign_setup.campaign_id
+            account_id = None
+            
+            # Проверка, содержит ли ID кампании ID аккаунта
+            campaign_parts = campaign_id.split('_')
+            if len(campaign_parts) > 1 and campaign_parts[0] == 'act':
+                account_id = f"act_{campaign_parts[1]}"
+            
+            # Находим подходящий токен
+            token = find_suitable_token(user, campaign_id, account_id)
+            
+            # Если не нашли подходящий токен, но есть стандартные настройки
+            if not token and user.fb_access_token:
+                # Инициализация клиента FB API с стандартными настройками
+                fb_client = FacebookAdClient(
+                    access_token=user.fb_access_token,
+                    app_id=user.fb_app_id,
+                    app_secret=user.fb_app_secret,
+                    ad_account_id=user.fb_account_id
+                )
+                logger.info(f"Using default FB credentials for campaign {campaign_id}")
+            elif token:
+                # Инициализация клиента FB API с токеном
+                fb_client = FacebookAdClient(token_obj=token)
+                if account_id:
+                    fb_client.set_account(account_id)
+                logger.info(f"Using token '{token.name}' for campaign {campaign_id}")
+            else:
+                logger.error(f"No valid token or credentials found for campaign {campaign_id}")
+                return
             
             # Инициализация монитора
             monitor = AdMonitor(fb_client)

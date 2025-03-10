@@ -1,16 +1,6 @@
 from flask import Flask
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from flask_login import LoginManager
-from flask_wtf.csrf import CSRFProtect
 from config import Config
-
-# Инициализация расширений
-db = SQLAlchemy()
-migrate = Migrate()
-login_manager = LoginManager()
-login_manager.login_view = 'auth.login'
-csrf = CSRFProtect()
+from app.extensions import db, migrate, login_manager, csrf
 
 def create_app(config_class=Config):
     app = Flask(__name__)
@@ -28,7 +18,7 @@ def create_app(config_class=Config):
         def generate_csrf_token():
             from flask_wtf.csrf import generate_csrf
             return generate_csrf()
-            
+        
         # Регистрация схем (blueprints)
         from app.auth import bp as auth_bp
         app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -37,3 +27,5 @@ def create_app(config_class=Config):
         app.register_blueprint(main_bp)
     
     return app
+
+# Не импортируйте ничего здесь, чтобы избежать циклических импортов
