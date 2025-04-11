@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+
+{% block title %}Управление кампаниями - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Управление кампаниями</h1>
+            <div>
+                <form method="POST" action="{{ url_for('main.refresh_campaigns') }}" class="d-inline">
+                    {{ form.csrf_token }}
+                    <button type="submit" class="btn btn-outline-primary">Обновить список кампаний</button>
+                </form>
+                <a href="{{ url_for('main.assign_campaign') }}" class="btn btn-primary">Назначить кампанию</a>
+            </div>
+        </div>
+        
+        {% if not has_api_configured %}
+        <div class="alert alert-warning">
+            <h4 class="alert-heading">Необходимо настроить Facebook API</h4>
+            <p>Для получения списка кампаний и управления ими необходимо настроить доступ к Facebook API.</p>
+            <a href="{{ url_for('auth.manage_tokens') }}" class="btn btn-warning">Управление токенами</a>
+        </div>
+        {% endif %}
+        
+        {% if campaign_setups %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Назначенные кампании</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Кампания</th>
+                                <th>Сетап</th>
+                                <th>Интервал</th>
+                                <th>Статус</th>
+                                <th>Последняя проверка</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for campaign_setup in campaign_setups %}
+                            <tr>
+                                <td>{{ campaign_setup.campaign_name or campaign_setup.campaign_id }}</td>
+                                <td>{{ campaign_setup.setup.name }}</td>
+                                <td>{{ campaign_setup.setup.check_interval }} мин</td>
+                                <td>
+                                    {% if campaign_setup.is_active %}
+                                    <span class="badge bg-success">Активна</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">Неактивна</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if campaign_setup.last_checked %}
+                                    {{ campaign_setup.last_checked.strftime('%d.%m.%Y %H:%M') }}
+                                    {% else %}
+                                    <span class="text-muted">Не проверялась</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <form method="POST" action="{{ url_for('main.toggle_campaign_setup', id=campaign_setup.id) }}">
+                                            {{ form.csrf_token }}
+                                            <button type="submit" class="btn btn-warning me-1">
+                                                {% if campaign_setup.is_active %}
+                                                Деактивировать
+                                                {% else %}
+                                                Активировать
+                                                {% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('main.delete_campaign_setup', id=campaign_setup.id) }}">
+                                            {{ form.csrf_token }}
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены?')">
+                                                Удалить
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <h4 class="alert-heading">Нет назначенных кампаний</h4>
+            <p>Обновите список кампаний и назначьте им сетапы для мониторинга.</p>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

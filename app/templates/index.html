@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+
+{% block title %}Главная - Facebook Ads Monitor{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="jumbotron bg-light p-5 rounded">
+            <h1 class="display-4">Facebook Ads Monitor</h1>
+            <p class="lead">Автоматическое управление рекламными объявлениями Facebook на основе эффективности конверсий.</p>
+            
+            {% if not current_user.is_authenticated %}
+            <hr class="my-4">
+            <p>Для начала работы необходимо авторизоваться или зарегистрироваться.</p>
+            <div class="d-flex gap-2">
+                <a class="btn btn-primary btn-lg" href="{{ url_for('auth.login') }}" role="button">Войти</a>
+                <a class="btn btn-secondary btn-lg" href="{{ url_for('auth.register') }}" role="button">Регистрация</a>
+            </div>
+            {% else %}
+                {% set has_api_configured = false %}
+                
+                {% if current_user.facebook_tokens.filter_by(status='valid').count() > 0 %}
+                    {% set has_api_configured = true %}
+                {% elif current_user.fb_access_token %}
+                    {% set has_api_configured = true %}
+                {% endif %}
+                
+                {% if not has_api_configured %}
+                <hr class="my-4">
+                <div class="alert alert-warning">
+                    <h4 class="alert-heading">Настройка Facebook API</h4>
+                    <p>Для начала работы необходимо настроить доступ к Facebook API.</p>
+                    <a href="{{ url_for('auth.manage_tokens') }}" class="btn btn-warning">Управление токенами</a>
+                </div>
+                {% endif %}
+                
+                <hr class="my-4">
+                <div class="row mt-4">
+                    <div class="col-md-4">
+                        <div class="card mb-4">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Сетапы</h5>
+                                <p class="card-text">Создайте правила для автоматического отключения объявлений.</p>
+                                <a href="{{ url_for('main.setups') }}" class="btn btn-primary">Управление сетапами</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-4">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">Кампании</h5>
+                                <p class="card-text">Назначьте сетапы рекламным кампаниям для мониторинга.</p>
+                                <a href="{{ url_for('main.campaigns') }}" class="btn btn-primary">Управление кампаниями</a>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card mb-4">
+                            <div class="card-body text-center">
+                                <h5 class="card-title">API Facebook</h5>
+                                <p class="card-text">Управление токенами Facebook API.</p>
+                                <a href="{{ url_for('auth.manage_tokens') }}" class="btn btn-primary">Управление токенами</a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

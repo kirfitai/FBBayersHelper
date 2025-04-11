@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Сетапы - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <div class="d-flex justify-content-between align-items-center mb-4">
+            <h1>Управление сетапами</h1>
+            <a href="{{ url_for('main.create_setup') }}" class="btn btn-primary">Создать сетап</a>
+        </div>
+        
+        {% if setups %}
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Ваши сетапы</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Название</th>
+                                <th>Интервал проверки</th>
+                                <th>Статус</th>
+                                <th>Создан</th>
+                                <th>Действия</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for setup in setups %}
+                            <tr>
+                                <td>{{ setup.name }}</td>
+                                <td>{{ setup.check_interval }} мин</td>
+                                <td>
+                                    {% if setup.is_active %}
+                                    <span class="badge bg-success">Активен</span>
+                                    {% else %}
+                                    <span class="badge bg-danger">Неактивен</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ setup.created_at.strftime('%d.%m.%Y %H:%M') }}</td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('main.edit_setup', id=setup.id) }}" class="btn btn-primary me-1">Редактировать</a>
+                                        <form method="POST" action="{{ url_for('main.toggle_setup', id=setup.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('_csrf_token', '') }}">
+                                            <button type="submit" class="btn btn-warning me-1">
+                                                {% if setup.is_active %}
+                                                Деактивировать
+                                                {% else %}
+                                                Активировать
+                                                {% endif %}
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('main.delete_setup', id=setup.id) }}" class="d-inline">
+                                            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('_csrf_token', '') }}">
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены? Это действие удалит все связанные данные.')">
+                                                Удалить
+                                            </button>
+                                        </form>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        {% else %}
+        <div class="alert alert-info">
+            <h4 class="alert-heading">Нет созданных сетапов</h4>
+            <p>Создайте сетап для автоматического мониторинга и отключения объявлений.</p>
+            <a href="{{ url_for('main.create_setup') }}" class="btn btn-primary">Создать сетап</a>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

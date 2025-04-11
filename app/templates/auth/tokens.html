@@ -1,0 +1,356 @@
+{% extends "base.html" %}
+
+{% block title %}Управление токенами - {{ super() }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .token-card {
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
+    }
+    
+    .token-valid {
+        border-left: 5px solid #28a745;
+    }
+    
+    .token-invalid {
+        border-left: 5px solid #dc3545;
+    }
+    
+    .token-pending {
+        border-left: 5px solid #ffc107;
+    }
+    
+    .token-field {
+        padding: 10px;
+        border-radius: 5px;
+        margin-bottom: 10px;
+    }
+    
+    .token-field-valid {
+        background-color: rgba(40, 167, 69, 0.1);
+    }
+    
+    .token-field-invalid {
+        background-color: rgba(220, 53, 69, 0.1);
+    }
+    
+    .token-field-pending {
+        background-color: rgba(255, 193, 7, 0.1);
+    }
+    
+    .token-status-icon {
+        font-size: 1.2rem;
+        margin-right: 5px;
+    }
+    
+    .token-actions {
+        margin-top: 15px;
+    }
+    
+    .token-form {
+        margin-bottom: 30px;
+    }
+    
+    .account-badge {
+        display: inline-block;
+        background-color: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 30px;
+        padding: 2px 10px;
+        margin-right: 5px;
+        margin-bottom: 5px;
+        font-size: 0.8rem;
+    }
+    
+    .account-badge .badge {
+        margin-left: 5px;
+        font-size: 0.7rem;
+    }
+    
+    .proxy-toggle {
+        display: none;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-12">
+        <h1 class="mb-4">Управление токенами Facebook API</h1>
+        
+        <div class="row">
+            <div class="col-md-8">
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Ваши токены (<span id="tokens-count">{{ tokens|length }}</span>/10)</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if tokens %}
+                            <div class="row" id="tokens-container">
+                                {% for token in tokens %}
+                                    <div class="col-md-12">
+                                        <div class="card token-card token-{{ token.status }}">
+                                            <div class="card-header d-flex justify-content-between align-items-center">
+                                                <h5 class="mb-0">
+                                                    {% if token.status == 'valid' %}
+                                                        <span class="token-status-icon text-success">✓</span>
+                                                    {% elif token.status == 'invalid' %}
+                                                        <span class="token-status-icon text-danger">⚠</span>
+                                                    {% else %}
+                                                        <span class="token-status-icon text-warning">?</span>
+                                                    {% endif %}
+                                                    {{ token.name }}
+                                                </h5>
+                                                <div>
+                                                    <form action="{{ url_for('auth.refresh_token_campaigns', token_id=token.id) }}" method="post" class="d-inline">
+                                                        {{ form.csrf_token }}
+                                                        <button type="submit" class="btn btn-sm btn-outline-success" 
+                                                                {% if token.status != 'valid' %}disabled{% endif %}>
+                                                            Обновить кампании
+                                                        </button>
+                                                    </form>
+                                                    <form action="{{ url_for('auth.check_token', token_id=token.id) }}" method="post" class="d-inline">
+                                                        {{ form.csrf_token }}
+                                                        <button type="submit" class="btn btn-sm btn-outline-primary">
+                                                            Проверить
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </div>
+                                            <div class="card-body">
+                                                <div class="token-field token-field-{{ token.status }}">
+                                                    <strong>Access Token:</strong> 
+                                                    <span class="text-monospace">{{ token.access_token[:25] }}...{{ token.access_token[-10:] }}</span>
+                                                </div>
+                                                <div class="row">
+                                                    <div class="col-md-6">
+                                                        <p><strong>App ID:</strong> {{ token.app_id or 'Не указан' }}</p>
+                                                        <p><strong>App Secret:</strong> {{ token.app_secret|truncate(10, True, '...') if token.app_secret else 'Не указан' }}</p>
+                                                        <p>
+                                                            <strong>Прокси:</strong> 
+                                                            {% if token.use_proxy %}
+                                                                {% if token.proxy_url %}
+                                                                    {{ token.proxy_url }}
+                                                                {% else %}
+                                                                    <span class="text-warning">Включено, но URL не указан</span>
+                                                                {% endif %}
+                                                            {% else %}
+                                                                <span class="text-muted">Не используется</span>
+                                                            {% endif %}
+                                                        </p>
+                                                    </div>
+                                                    <div class="col-md-6">
+                                                        <p>
+                                                            <strong>Статус:</strong> 
+                                                            {% if token.status == 'valid' %}
+                                                                <span class="text-success">Работает</span>
+                                                            {% elif token.status == 'invalid' %}
+                                                                <span class="text-danger">Не работает</span>
+                                                            {% else %}
+                                                                <span class="text-warning">Не проверен</span>
+                                                            {% endif %}
+                                                        </p>
+                                                        <p>
+                                                            <strong>Последняя проверка:</strong> 
+                                                            {% if token.last_checked %}
+                                                                {{ token.last_checked.strftime('%d.%m.%Y %H:%M') }}
+                                                            {% else %}
+                                                                <span class="text-muted">Не проверялся</span>
+                                                            {% endif %}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                                
+                                                {% if token.accounts.count() > 0 %}
+                                                <div class="mt-3">
+                                                    <strong>Отслеживаемые аккаунты:</strong><br>
+                                                    {% for account in token.accounts %}
+                                                    <span class="account-badge">
+                                                        {{ account.account_name or account.account_id }}
+                                                        {% if account.campaign_count > 0 %}
+                                                        <span class="badge bg-secondary">{{ account.campaign_count }} кампаний</span>
+                                                        {% endif %}
+                                                    </span>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                                
+                                                {% if token.error_message %}
+                                                <div class="mt-3 alert alert-danger">
+                                                    <strong>Ошибка:</strong> {{ token.error_message }}
+                                                </div>
+                                                {% endif %}
+                                                
+                                                <div class="row token-actions">
+                                                    <div class="col-12">
+                                                        <form action="{{ url_for('auth.delete_token', token_id=token.id) }}" method="post" class="d-inline">
+                                                            {{ form.csrf_token }}
+                                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите удалить этот токен?')">
+                                                                Удалить
+                                                            </button>
+                                                        </form>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        {% else %}
+                            <div class="alert alert-info">
+                                <h4 class="alert-heading">Нет добавленных токенов</h4>
+                                <p>Добавьте токен для работы с Facebook API</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-4">
+                <div class="card token-form">
+                    <div class="card-header">
+                        <h5 class="mb-0">Добавить новый токен</h5>
+                    </div>
+                    <div class="card-body">
+                        {% if can_add_token %}
+                            <form method="POST" novalidate>
+                                {{ token_form.hidden_tag() }}
+                                
+                                <div class="mb-3">
+                                    {{ token_form.name.label(class="form-label") }}
+                                    {{ token_form.name(class="form-control") }}
+                                    {% if token_form.name.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.name.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    {{ token_form.access_token.label(class="form-label") }}
+                                    {{ token_form.access_token(class="form-control") }}
+                                    {% if token_form.access_token.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.access_token.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="mb-3">
+                                    {{ token_form.app_id.label(class="form-label") }}
+                                    {{ token_form.app_id(class="form-control") }}
+                                    {% if token_form.app_id.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.app_id.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    {{ token_form.app_secret.label(class="form-label") }}
+                                    {{ token_form.app_secret(class="form-control") }}
+                                    {% if token_form.app_secret.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.app_secret.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
+                                </div>
+                                
+                                <div class="mb-3">
+                                    {{ token_form.account_id.label(class="form-label") }}
+                                    {{ token_form.account_id(class="form-control", placeholder="act_XXXXXXXX, act_YYYYYYYY") }}
+                                    {% if token_form.account_id.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.account_id.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="form-text">Можно указать несколько ID аккаунтов через запятую. Префикс "act_" можно не указывать.</div>
+                                </div>
+                                
+                                <div class="mb-3 form-check">
+                                    {{ token_form.use_proxy(class="form-check-input", id="use_proxy_checkbox") }}
+                                    {{ token_form.use_proxy.label(class="form-check-label") }}
+                                </div>
+                                
+                                <div class="mb-3 proxy-toggle" id="proxy_url_container">
+                                    {{ token_form.proxy_url.label(class="form-label") }}
+                                    {{ token_form.proxy_url(class="form-control") }}
+                                    {% if token_form.proxy_url.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in token_form.proxy_url.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                    <div class="form-text">Формат: http://username:password@host:port</div>
+                                </div>
+                                
+                                <div class="d-grid">
+                                    {{ token_form.submit(class="btn btn-primary") }}
+                                </div>
+                            </form>
+                        {% else %}
+                            <div class="alert alert-warning">
+                                <h5 class="alert-heading">Достигнут лимит токенов</h5>
+                                <p>Вы уже добавили максимальное количество токенов (10). Удалите неиспользуемые токены, чтобы добавить новые.</p>
+                            </div>
+                        {% endif %}
+                    </div>
+                </div>
+                
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Информация</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="alert alert-info">
+                            <h5 class="alert-heading">Как это работает</h5>
+                            <p>Вы можете добавить до 10 токенов для работы с Facebook API.</p>
+                            <p>Статусы токенов:</p>
+                            <ul>
+                                <li><span class="text-success">✓</span> <strong>Работает</strong> - токен проверен и активен</li>
+                                <li><span class="text-danger">⚠</span> <strong>Не работает</strong> - токен недействителен</li>
+                                <li><span class="text-warning">?</span> <strong>Не проверен</strong> - токен еще не проверялся</li>
+                            </ul>
+                            <p>Каждый токен может отслеживать несколько рекламных аккаунтов. Система автоматически выбирает подходящий токен для работы с кампаниями.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Управление отображением поля прокси
+    const useProxyCheckbox = document.getElementById('use_proxy_checkbox');
+    const proxyUrlContainer = document.getElementById('proxy_url_container');
+    
+    if (useProxyCheckbox && proxyUrlContainer) {
+        // Инициализация при загрузке страницы
+        proxyUrlContainer.style.display = useProxyCheckbox.checked ? 'block' : 'none';
+        
+        // Обработчик изменения чекбокса
+        useProxyCheckbox.addEventListener('change', function() {
+            proxyUrlContainer.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+});
+</script>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+
+{% block title %}Настройки Facebook API - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h3 class="mb-0">Настройки Facebook API</h3>
+            </div>
+            <div class="card-body">
+                <div class="alert alert-info">
+                    <h5 class="alert-heading">Инструкция по получению данных:</h5>
+                    <ol>
+                        <li>Создайте приложение в <a href="https://developers.facebook.com/apps" target="_blank">Facebook for Developers</a>.</li>
+                        <li>Получите Access Token с разрешениями <code>ads_management</code> и <code>ads_read</code>.</li>
+                        <li>Скопируйте App ID и App Secret из настроек приложения.</li>
+                        <li>ID рекламного аккаунта можно найти в <a href="https://business.facebook.com/adsmanager" target="_blank">Business Manager</a> в формате <code>act_XXXXXXXXXX</code>.</li>
+                    </ol>
+                </div>
+                
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.access_token.label(class="form-label") }}
+                        {{ form.access_token(class="form-control") }}
+                        {% if form.access_token.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.access_token.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">Долгосрочный Access Token с разрешениями для управления рекламой.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.app_id.label(class="form-label") }}
+                        {{ form.app_id(class="form-control") }}
+                        {% if form.app_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.app_id.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.app_secret.label(class="form-label") }}
+                        {{ form.app_secret(class="form-control") }}
+                        {% if form.app_secret.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.app_secret.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.account_id.label(class="form-label") }}
+                        {{ form.account_id(class="form-control", placeholder="act_XXXXXXXXXX") }}
+                        {% if form.account_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.account_id.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">ID рекламного аккаунта в формате <code>act_XXXXXXXXXX</code>.</div>
+                    </div>
+                    
+                    <div class="d-grid">
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
