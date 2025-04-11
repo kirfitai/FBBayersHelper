@@ -8,6 +8,7 @@ Flask-Migrate==4.0.4
 Flask-SQLAlchemy==3.0.3
 Flask-WTF==1.1.1
 WTForms==3.0.1
+Werkzeug==2.2.3
 
 # База данных
 SQLAlchemy==2.0.4
