@@ -13,10 +13,8 @@ app = "fbbayershelper"
   destination = "/data"
 
 [[services]]
-  http_checks = []
-  internal_port = 8080
   protocol = "tcp"
-  script_checks = []
+  internal_port = 8080
   
   [[services.ports]]
     force_https = true
@@ -33,7 +31,7 @@ app = "fbbayershelper"
     type = "connections"
 
   [[services.tcp_checks]]
-    grace_period = "5s"
+    grace_period = "20s"
     interval = "15s"
     restart_limit = 0
-    timeout = "2s" 
+    timeout = "5s" 

@@ -20,6 +20,8 @@ ENV PORT=8080
 ENV FLASK_APP=run.py
 ENV LOG_TO_STDOUT=1
 ENV SECRET_KEY=default-dev-key-change-in-production
+ENV LC_ALL=C.UTF-8
+ENV LANG=C.UTF-8
 
 # Создание директории для данных
 RUN mkdir -p /data
@@ -33,4 +35,5 @@ USER appuser
 EXPOSE 8080
 
 # Запуск приложения через gunicorn
-CMD exec gunicorn --bind 0.0.0.0:$PORT run:app 
+# Используем объект app, который определен в run.py
+CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --log-level debug run:app 
