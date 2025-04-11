@@ -5,25 +5,35 @@ app = "fbbayershelper"
 
 [env]
   PORT = "8080"
+  LOG_TO_STDOUT = "1"
+  DATABASE_URL = "sqlite:////data/app.db"
+
+[mounts]
+  source = "fbbayershelper_data"
+  destination = "/data"
 
 [[services]]
-  protocol = "tcp"
+  http_checks = []
   internal_port = 8080
+  protocol = "tcp"
+  script_checks = []
   
   [[services.ports]]
-    port = 80
+    force_https = true
     handlers = ["http"]
+    port = 80
   
   [[services.ports]]
-    port = 443
     handlers = ["tls", "http"]
+    port = 443
   
   [services.concurrency]
-    type = "connections"
     hard_limit = 25
     soft_limit = 20
+    type = "connections"
 
   [[services.tcp_checks]]
+    grace_period = "5s"
     interval = "15s"
-    timeout = "2s"
-    grace_period = "1s" 
+    restart_limit = 0
+    timeout = "2s" 

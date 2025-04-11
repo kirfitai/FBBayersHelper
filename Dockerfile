@@ -18,6 +18,12 @@ COPY . .
 # Установка переменных окружения
 ENV PORT=8080
 ENV FLASK_APP=run.py
+ENV LOG_TO_STDOUT=1
+ENV SECRET_KEY=default-dev-key-change-in-production
+
+# Создание директории для данных
+RUN mkdir -p /data
+RUN chmod 777 /data
 
 # Создание пользователя без привилегий
 RUN useradd -m appuser
@@ -27,4 +33,4 @@ USER appuser
 EXPOSE 8080
 
 # Запуск приложения через gunicorn
-CMD exec gunicorn --bind :$PORT "run:create_app()" 
+CMD exec gunicorn --bind 0.0.0.0:$PORT run:app 
