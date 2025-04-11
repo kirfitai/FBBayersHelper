@@ -1,7 +1,4 @@
-app = "fbhelper"
-primary_region = "fra"
-kill_signal = "SIGINT"
-kill_timeout = 5
+app = "fbbayershelper"
 
 [build]
   dockerfile = "Dockerfile"
@@ -9,13 +6,24 @@ kill_timeout = 5
 [env]
   PORT = "8080"
 
-[http_service]
+[[services]]
+  protocol = "tcp"
   internal_port = 8080
-  force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 0
+  
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+  
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+  
+  [services.concurrency]
+    type = "connections"
+    hard_limit = 25
+    soft_limit = 20
 
-[mounts]
-  source = "fbbayers_data"
-  destination = "/data" 
+  [[services.tcp_checks]]
+    interval = "15s"
+    timeout = "2s"
+    grace_period = "1s" 
