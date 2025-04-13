@@ -1,4 +1,4 @@
-app = "fbbayershelper"
+app = "facebook-bayers"
 
 [build]
   dockerfile = "Dockerfile"
@@ -9,7 +9,7 @@ app = "fbbayershelper"
   DATABASE_URL = "sqlite:////data/app.db"
 
 [mounts]
-  source = "fbbayershelper_data"
+  source = "facebook_bayers_data"
   destination = "/data"
 
 [[services]]
