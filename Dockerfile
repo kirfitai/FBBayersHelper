@@ -27,6 +27,9 @@ ENV LANG=C.UTF-8
 RUN mkdir -p /data
 RUN chmod 777 /data
 
+# Делаем entrypoint исполняемым
+RUN chmod +x /app/entrypoint.sh
+
 # Создание пользователя без привилегий
 RUN useradd -m appuser
 USER appuser
@@ -34,6 +37,5 @@ USER appuser
 # Открытие порта для работы приложения
 EXPOSE 8080
 
-# Запуск приложения через gunicorn
-# Используем объект app, который определен в run.py
-CMD exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --log-level debug run:app 
+# Запуск приложения через entrypoint.sh
+ENTRYPOINT ["/app/entrypoint.sh"] 
