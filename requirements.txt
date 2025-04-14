@@ -9,6 +9,7 @@ Flask-SQLAlchemy==3.0.3
 Flask-WTF==1.1.1
 WTForms==3.0.1
 Werkzeug==2.2.3
+email-validator==2.1.0
 
 # База данных
 SQLAlchemy==2.0.4
