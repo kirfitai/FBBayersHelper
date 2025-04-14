@@ -195,6 +195,16 @@ function loadStats() {
         success: function(response) {
             $('#loadingStats').addClass('d-none');
             
+            // Проверка на полностью пустой ответ или пустую статистику
+            if (!response || (response.stats && Object.keys(response.stats).length === 0)) {
+                $('#noDataMessage').removeClass('d-none');
+                if (prefixChart) {
+                    prefixChart.destroy();
+                    prefixChart = null;
+                }
+                return;
+            }
+            
             if (refPrefix) {
                 // Данные для конкретного префикса по дням
                 displayPrefixStats(response);
