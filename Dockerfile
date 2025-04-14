@@ -22,13 +22,18 @@ ENV LOG_TO_STDOUT=1
 ENV SECRET_KEY=default-dev-key-change-in-production
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
+ENV DATABASE_URL=sqlite:////data/app.db
 
 # Создание директории для данных
 RUN mkdir -p /data
-RUN chmod 777 /data
 
 # Создание пользователя без привилегий
 RUN useradd -m appuser
+
+# Предоставление прав на директорию с данными
+RUN chown -R appuser:appuser /data
+RUN chmod 777 /data
+
 USER appuser
 
 # Открытие порта для работы приложения
