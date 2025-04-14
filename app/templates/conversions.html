@@ -1,0 +1,307 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h1 class="mb-4">Аналитика конверсий</h1>
+    
+    <div class="row">
+        <div class="col-md-4">
+            <div class="card mb-4">
+                <div class="card-header">
+                    <h5>Фильтры</h5>
+                </div>
+                <div class="card-body">
+                    <form id="statsForm">
+                        <div class="mb-3">
+                            <label for="refPrefix" class="form-label">Префикс REF</label>
+                            <select class="form-select" id="refPrefix" name="refPrefix">
+                                <option value="">Все префиксы</option>
+                                {% for prefix in ref_prefixes %}
+                                <option value="{{ prefix }}">{{ prefix }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="mb-3">
+                            <label for="startDate" class="form-label">Дата начала</label>
+                            <input type="date" class="form-control" id="startDate" name="startDate">
+                        </div>
+                        <div class="mb-3">
+                            <label for="endDate" class="form-label">Дата окончания</label>
+                            <input type="date" class="form-control" id="endDate" name="endDate">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Применить</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Статистика конверсий</h5>
+                </div>
+                <div class="card-body">
+                    <div id="statsContainer">
+                        <div class="text-center mb-4" id="loadingStats">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Загрузка...</span>
+                            </div>
+                            <p>Загрузка статистики...</p>
+                        </div>
+                        
+                        <div id="noDataMessage" class="text-center d-none">
+                            <p>Нет данных за выбранный период</p>
+                        </div>
+                        
+                        <div id="statsTable" class="d-none">
+                            <div class="table-responsive">
+                                <table class="table table-bordered table-hover">
+                                    <thead class="table-light">
+                                        <tr>
+                                            <th>Дата</th>
+                                            <th>Форма ID</th>
+                                            <th>Количество</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="statsData">
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card mt-4">
+                <div class="card-header">
+                    <h5>Распределение по префиксам</h5>
+                </div>
+                <div class="card-body">
+                    <canvas id="prefixChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+let prefixChart = null;
+
+$(document).ready(function() {
+    // Загрузка начальных данных
+    loadStats();
+    
+    // Обработчик формы
+    $('#statsForm').on('submit', function(e) {
+        e.preventDefault();
+        loadStats();
+    });
+});
+
+function loadStats() {
+    const refPrefix = $('#refPrefix').val();
+    const startDate = $('#startDate').val();
+    const endDate = $('#endDate').val();
+    
+    // Сбросим текущее состояние
+    $('#loadingStats').removeClass('d-none');
+    $('#statsTable').addClass('d-none');
+    $('#noDataMessage').addClass('d-none');
+    
+    // Формируем URL запроса
+    let url = '/api/conversions/stats?';
+    const params = [];
+    
+    if (refPrefix) {
+        params.push(`ref_prefix=${refPrefix}`);
+    }
+    
+    if (startDate) {
+        params.push(`start_date=${startDate}`);
+    }
+    
+    if (endDate) {
+        params.push(`end_date=${endDate}`);
+    }
+    
+    url += params.join('&');
+    
+    // Запрос данных
+    $.ajax({
+        url: url,
+        method: 'GET',
+        success: function(response) {
+            $('#loadingStats').addClass('d-none');
+            
+            if (refPrefix) {
+                // Данные для конкретного префикса по дням
+                displayPrefixStats(response);
+            } else {
+                // Общая статистика по префиксам
+                displayGeneralStats(response);
+            }
+        },
+        error: function(xhr) {
+            $('#loadingStats').addClass('d-none');
+            $('#noDataMessage').removeClass('d-none').text('Ошибка при загрузке данных');
+            console.error('Ошибка:', xhr.responseText);
+        }
+    });
+}
+
+function displayPrefixStats(response) {
+    const stats = response.stats;
+    const dates = Object.keys(stats).sort();
+    
+    if (dates.length === 0) {
+        $('#noDataMessage').removeClass('d-none');
+        return;
+    }
+    
+    $('#statsTable').removeClass('d-none');
+    
+    // Заполняем таблицу
+    const tbody = $('#statsData');
+    tbody.empty();
+    
+    dates.forEach(date => {
+        const formIds = Object.keys(stats[date]);
+        
+        formIds.forEach(formId => {
+            const count = stats[date][formId];
+            tbody.append(`
+                <tr>
+                    <td>${date}</td>
+                    <td>${formId}</td>
+                    <td>${count}</td>
+                </tr>
+            `);
+        });
+    });
+    
+    // Создаем график по дням для выбранного префикса
+    const chartData = {
+        labels: dates,
+        datasets: []
+    };
+    
+    // Собираем все уникальные formId из всех дат
+    const allFormIds = new Set();
+    dates.forEach(date => {
+        Object.keys(stats[date]).forEach(formId => {
+            allFormIds.add(formId);
+        });
+    });
+    
+    // Создаем наборы данных для каждого formId
+    const formIdArray = Array.from(allFormIds);
+    const colors = generateColors(formIdArray.length);
+    
+    formIdArray.forEach((formId, index) => {
+        const dataPoints = dates.map(date => {
+            return stats[date][formId] || 0;
+        });
+        
+        chartData.datasets.push({
+            label: `Форма ${formId}`,
+            data: dataPoints,
+            backgroundColor: colors[index],
+            borderColor: colors[index],
+            borderWidth: 1
+        });
+    });
+    
+    updateChart(chartData, 'Количество конверсий по дням');
+}
+
+function displayGeneralStats(response) {
+    const stats = response.stats;
+    const prefixes = Object.keys(stats);
+    
+    if (prefixes.length === 0) {
+        $('#noDataMessage').removeClass('d-none');
+        return;
+    }
+    
+    $('#statsTable').removeClass('d-none');
+    
+    // Заполняем таблицу
+    const tbody = $('#statsData');
+    tbody.empty();
+    
+    prefixes.forEach(prefix => {
+        const count = stats[prefix];
+        tbody.append(`
+            <tr>
+                <td colspan="2">${prefix}</td>
+                <td>${count}</td>
+            </tr>
+        `);
+    });
+    
+    // Создаем диаграмму распределения по префиксам
+    const colors = generateColors(prefixes.length);
+    
+    const chartData = {
+        labels: prefixes,
+        datasets: [{
+            label: 'Количество конверсий',
+            data: prefixes.map(prefix => stats[prefix]),
+            backgroundColor: colors,
+            borderColor: colors,
+            borderWidth: 1
+        }]
+    };
+    
+    updateChart(chartData, 'Распределение конверсий по префиксам');
+}
+
+function updateChart(data, title) {
+    const ctx = document.getElementById('prefixChart').getContext('2d');
+    
+    if (prefixChart) {
+        prefixChart.destroy();
+    }
+    
+    prefixChart = new Chart(ctx, {
+        type: 'bar',
+        data: data,
+        options: {
+            responsive: true,
+            plugins: {
+                title: {
+                    display: true,
+                    text: title
+                },
+                legend: {
+                    position: 'top',
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true
+                }
+            }
+        }
+    });
+}
+
+function generateColors(count) {
+    const baseColors = [
+        '#4285F4', '#EA4335', '#FBBC05', '#34A853', 
+        '#FF6D01', '#46BDC6', '#7B1FA2', '#C2185B',
+        '#0097A7', '#00BFA5', '#673AB7', '#3949AB'
+    ];
+    
+    const colors = [];
+    for (let i = 0; i < count; i++) {
+        colors.push(baseColors[i % baseColors.length]);
+    }
+    
+    return colors;
+}
+</script>
+{% endblock %} 

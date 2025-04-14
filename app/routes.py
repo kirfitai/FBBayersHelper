@@ -7,8 +7,10 @@ from app.models.token import FacebookToken
 from app.forms import SetupForm, CampaignSetupForm, CampaignRefreshForm, ThresholdForm
 from app.services.fb_api_client import FacebookAdClient
 from app.services.token_checker import TokenChecker
+from app.models.conversion import Conversion
 import json
 import logging
+from datetime import datetime
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -449,3 +451,93 @@ def toggle_campaign_setup(id):
     logger.info(f"Кампания {campaign_setup.campaign_id} {status}")
     flash(f'Кампания {status}')
     return redirect(url_for('main.campaigns'))
+
+@bp.route('/api/conversion/add', methods=['POST'])
+def add_conversion():
+    """API для добавления конверсии"""
+    data = request.json
+    
+    if not data or not data.get('ref') or not data.get('form_id'):
+        return jsonify({'error': 'Необходимо указать ref и form_id'}), 400
+    
+    # Создаем запись о конверсии
+    conversion = Conversion(
+        ref=data.get('ref'),
+        form_id=data.get('form_id'),
+        ip_address=request.remote_addr,
+        user_agent=request.user_agent.string if request.user_agent else None
+    )
+    
+    db.session.add(conversion)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'id': conversion.id}), 201
+
+
+@bp.route('/api/conversions/stats', methods=['GET'])
+@login_required
+def get_conversion_stats():
+    """Получение статистики по конверсиям"""
+    ref_prefix = request.args.get('ref_prefix')
+    start_date = request.args.get('start_date')
+    end_date = request.args.get('end_date')
+    
+    if start_date:
+        try:
+            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Неверный формат даты начала (YYYY-MM-DD)'}), 400
+    
+    if end_date:
+        try:
+            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+        except ValueError:
+            return jsonify({'error': 'Неверный формат даты окончания (YYYY-MM-DD)'}), 400
+    
+    if ref_prefix:
+        # Статистика по конкретному префиксу
+        daily_stats = Conversion.get_daily_stats_by_ref_prefix(ref_prefix, start_date, end_date)
+        
+        result = {}
+        for date, form_id, count in daily_stats:
+            date_str = date.strftime('%Y-%m-%d')
+            if date_str not in result:
+                result[date_str] = {}
+            result[date_str][form_id] = count
+        
+        return jsonify({
+            'ref_prefix': ref_prefix,
+            'stats': result
+        })
+    else:
+        # Общая статистика по всем префиксам
+        from sqlalchemy import func
+        
+        query = db.session.query(
+            Conversion.ref_prefix,
+            func.count(Conversion.id).label('count')
+        ).group_by(Conversion.ref_prefix)
+        
+        if start_date:
+            query = query.filter(Conversion.date >= start_date)
+        if end_date:
+            query = query.filter(Conversion.date <= end_date)
+            
+        stats = query.all()
+        
+        return jsonify({
+            'stats': {prefix: count for prefix, count in stats}
+        })
+
+
+@bp.route('/conversions', methods=['GET'])
+@login_required
+def conversions_page():
+    """Страница с аналитикой конверсий"""
+    # Получаем уникальные ref_prefix
+    ref_prefixes = db.session.query(Conversion.ref_prefix).distinct().all()
+    ref_prefixes = [r[0] for r in ref_prefixes if r[0]]
+    
+    return render_template('conversions.html', 
+                          title='Конверсии', 
+                          ref_prefixes=ref_prefixes)

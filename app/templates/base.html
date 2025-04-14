@@ -34,7 +34,16 @@
                         <a class="nav-link" href="{{ url_for('main.setups') }}">Сетапы</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('main.campaigns') }}">Кампании</a>
+                        <a class="nav-link {% if request.endpoint and request.endpoint == 'main.campaigns' %}active{% endif %}" 
+                           href="{{ url_for('main.campaigns') }}">
+                          <i class="fas fa-ad me-1"></i> Кампании
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if request.endpoint and request.endpoint == 'main.conversions_page' %}active{% endif %}" 
+                           href="{{ url_for('main.conversions_page') }}">
+                          <i class="fas fa-chart-line me-1"></i> Конверсии
+                        </a>
                     </li>
                     {% endif %}
                 </ul>
