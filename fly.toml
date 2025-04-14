@@ -6,32 +6,16 @@ app = "facebook-bayers"
 [env]
   PORT = "8080"
   LOG_TO_STDOUT = "1"
-  DATABASE_URL = "sqlite:////data/app.db"
+  PYTHONUNBUFFERED = "1"
 
 [mounts]
   source = "facebook_bayers_data"
   destination = "/data"
 
-[[services]]
-  protocol = "tcp"
+[http_service]
   internal_port = 8080
-  
-  [[services.ports]]
-    force_https = true
-    handlers = ["http"]
-    port = 80
-  
-  [[services.ports]]
-    handlers = ["tls", "http"]
-    port = 443
-  
-  [services.concurrency]
-    hard_limit = 25
-    soft_limit = 20
-    type = "connections"
-
-  [[services.tcp_checks]]
-    grace_period = "20s"
-    interval = "15s"
-    restart_limit = 0
-    timeout = "5s" 
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
