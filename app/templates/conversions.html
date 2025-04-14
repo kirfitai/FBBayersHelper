@@ -4,6 +4,16 @@
 <div class="container mt-4">
     <h1 class="mb-4">Аналитика конверсий</h1>
     
+    <div class="alert alert-info">
+        <h5>Просмотр и работа с конверсиями</h5>
+        <p>На этой странице вы можете увидеть аналитику по конверсиям, сгруппированным по префиксам ref.</p>
+        <p>Для просмотра полного списка конверсий с возможностью фильтрации и пагинации перейдите на 
+            <a href="{{ url_for('main.conversions_list') }}" class="btn btn-primary">
+                <i class="fas fa-list"></i> Список конверсий
+            </a>
+        </p>
+    </div>
+    
     <div class="row">
         <div class="col-md-4">
             <div class="card mb-4">
@@ -78,6 +88,55 @@
                 </div>
                 <div class="card-body">
                     <canvas id="prefixChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5>Инструкция по интеграции</h5>
+                </div>
+                <div class="card-body">
+                    <h6>Отправка конверсий</h6>
+                    <p>Для отправки данных о конверсиях вы можете использовать GET или POST запрос по адресу:</p>
+                    <pre class="bg-light p-3 border rounded"><code>{{ request.host_url }}api/conversion/add</code></pre>
+                    
+                    <h6>Параметры запроса:</h6>
+                    <ul>
+                        <li><strong>ref</strong> - (обязательный) ref параметр, например utm_source или другой идентификатор кампании</li>
+                        <li><strong>formid</strong> - (обязательный) ID формы или рекламного объявления из Facebook</li>
+                        <li><strong>quid</strong> - (необязательный) уникальный идентификатор запроса</li>
+                    </ul>
+                    
+                    <h6>Примеры запросов:</h6>
+                    <p>GET запрос:</p>
+                    <pre class="bg-light p-3 border rounded"><code>{{ request.host_url }}api/conversion/add?ref=abc123&formid=6543210&quid=unique123</code></pre>
+                    
+                    <p>POST запрос (JSON):</p>
+                    <pre class="bg-light p-3 border rounded"><code>
+fetch('{{ request.host_url }}api/conversion/add', {
+    method: 'POST',
+    headers: {
+        'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+        ref: 'abc123',
+        formid: '6543210',
+        quid: 'unique123'
+    })
+});</code></pre>
+                    
+                    <p>POST запрос (form-data):</p>
+                    <pre class="bg-light p-3 border rounded"><code>
+&lt;form action="{{ request.host_url }}api/conversion/add" method="post"&gt;
+    &lt;input type="text" name="ref" value="abc123"&gt;
+    &lt;input type="text" name="formid" value="6543210"&gt;
+    &lt;input type="text" name="quid" value="unique123"&gt;
+    &lt;button type="submit"&gt;Отправить&lt;/button&gt;
+&lt;/form&gt;</code></pre>
                 </div>
             </div>
         </div>

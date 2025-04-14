@@ -452,18 +452,31 @@ def toggle_campaign_setup(id):
     flash(f'Кампания {status}')
     return redirect(url_for('main.campaigns'))
 
-@bp.route('/api/conversion/add', methods=['POST'])
+@bp.route('/api/conversion/add', methods=['GET', 'POST'])
 def add_conversion():
-    """API для добавления конверсии"""
-    data = request.json
+    """API для добавления конверсии через GET или POST запросы"""
+    # Получаем данные из GET или POST запроса
+    if request.method == 'POST':
+        if request.is_json:
+            data = request.json
+        else:
+            data = request.form
+    else:  # GET запрос
+        data = request.args
     
-    if not data or not data.get('ref') or not data.get('form_id'):
-        return jsonify({'error': 'Необходимо указать ref и form_id'}), 400
+    # Проверяем наличие обязательных параметров
+    ref = data.get('ref')
+    form_id = data.get('formid')  # Обратите внимание: параметр называется 'formid', а не 'form_id'
+    quid = data.get('quid')
+    
+    if not ref or not form_id:
+        return jsonify({'error': 'Необходимо указать ref и formid'}), 400
     
     # Создаем запись о конверсии
     conversion = Conversion(
-        ref=data.get('ref'),
-        form_id=data.get('form_id'),
+        ref=ref,
+        form_id=form_id,
+        quid=quid,
         ip_address=request.remote_addr,
         user_agent=request.user_agent.string if request.user_agent else None
     )
@@ -471,8 +484,12 @@ def add_conversion():
     db.session.add(conversion)
     db.session.commit()
     
-    return jsonify({'success': True, 'id': conversion.id}), 201
-
+    # Возвращаем успешный ответ
+    return jsonify({
+        'success': True, 
+        'id': conversion.id,
+        'message': 'Конверсия успешно сохранена'
+    }), 201
 
 @bp.route('/api/conversions/stats', methods=['GET'])
 @login_required
@@ -529,7 +546,6 @@ def get_conversion_stats():
             'stats': {prefix: count for prefix, count in stats}
         })
 
-
 @bp.route('/conversions', methods=['GET'])
 @login_required
 def conversions_page():
@@ -541,3 +557,128 @@ def conversions_page():
     return render_template('conversions.html', 
                           title='Конверсии', 
                           ref_prefixes=ref_prefixes)
+
+@bp.route('/conversions/list', methods=['GET'])
+@login_required
+def conversions_list():
+    """Страница со списком всех конверсий и фильтрацией"""
+    # Получаем параметры для фильтрации и пагинации
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    ref = request.args.get('ref', '')
+    ref_prefix = request.args.get('ref_prefix', '')
+    form_id = request.args.get('form_id', '')
+    quid = request.args.get('quid', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Строим запрос с фильтрами
+    query = Conversion.query
+    
+    if ref:
+        query = query.filter(Conversion.ref.like(f'%{ref}%'))
+    
+    if ref_prefix:
+        query = query.filter(Conversion.ref_prefix == ref_prefix)
+    
+    if form_id:
+        query = query.filter(Conversion.form_id == form_id)
+    
+    if quid:
+        query = query.filter(Conversion.quid.like(f'%{quid}%'))
+    
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            query = query.filter(Conversion.date >= start_date_obj)
+        except ValueError:
+            flash('Неверный формат даты начала', 'warning')
+    
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            query = query.filter(Conversion.date <= end_date_obj)
+        except ValueError:
+            flash('Неверный формат даты окончания', 'warning')
+    
+    # Сортировка по времени (сначала новые)
+    query = query.order_by(Conversion.timestamp.desc())
+    
+    # Получаем данные с пагинацией
+    conversions = query.paginate(page=page, per_page=per_page)
+    
+    # Получаем уникальные значения для фильтров
+    unique_prefixes = db.session.query(Conversion.ref_prefix).distinct().all()
+    unique_form_ids = db.session.query(Conversion.form_id).distinct().all()
+    
+    return render_template('conversions_list.html',
+                          title='Список конверсий',
+                          conversions=conversions,
+                          ref=ref,
+                          ref_prefix=ref_prefix,
+                          form_id=form_id,
+                          quid=quid,
+                          start_date=start_date,
+                          end_date=end_date,
+                          unique_prefixes=[p[0] for p in unique_prefixes if p[0]],
+                          unique_form_ids=[f[0] for f in unique_form_ids if f[0]])
+
+@bp.route('/api/conversions/list', methods=['GET'])
+@login_required
+def api_conversions_list():
+    """API для получения списка конверсий с пагинацией и фильтрацией"""
+    # Получаем параметры
+    page = request.args.get('page', 1, type=int)
+    per_page = request.args.get('per_page', 50, type=int)
+    ref = request.args.get('ref', '')
+    ref_prefix = request.args.get('ref_prefix', '')
+    form_id = request.args.get('form_id', '')
+    quid = request.args.get('quid', '')
+    start_date = request.args.get('start_date', '')
+    end_date = request.args.get('end_date', '')
+    
+    # Строим запрос с фильтрами
+    query = Conversion.query
+    
+    if ref:
+        query = query.filter(Conversion.ref.like(f'%{ref}%'))
+    
+    if ref_prefix:
+        query = query.filter(Conversion.ref_prefix == ref_prefix)
+    
+    if form_id:
+        query = query.filter(Conversion.form_id == form_id)
+    
+    if quid:
+        query = query.filter(Conversion.quid.like(f'%{quid}%'))
+    
+    if start_date:
+        try:
+            start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            query = query.filter(Conversion.date >= start_date_obj)
+        except ValueError:
+            return jsonify({'error': 'Неверный формат даты начала'}), 400
+    
+    if end_date:
+        try:
+            end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            query = query.filter(Conversion.date <= end_date_obj)
+        except ValueError:
+            return jsonify({'error': 'Неверный формат даты окончания'}), 400
+    
+    # Сортировка по времени (сначала новые)
+    query = query.order_by(Conversion.timestamp.desc())
+    
+    # Получаем данные с пагинацией
+    pagination = query.paginate(page=page, per_page=per_page)
+    
+    # Формируем результат
+    result = {
+        'items': [conversion.to_dict() for conversion in pagination.items],
+        'total': pagination.total,
+        'pages': pagination.pages,
+        'page': pagination.page,
+        'per_page': pagination.per_page
+    }
+    
+    return jsonify(result)
