@@ -7,7 +7,7 @@
 from app import create_app, db
 from app.models.user import User
 from app.models.setup import Setup, ThresholdEntry, CampaignSetup
-from app.models.token import FacebookToken
+from app.models.token import FacebookToken, FacebookTokenAccount
 from app.models.conversion import Conversion
 
 def init_db():
