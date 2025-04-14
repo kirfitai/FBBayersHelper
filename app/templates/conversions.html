@@ -308,6 +308,11 @@ function loadStats() {
         params.push(`end_date=${endDate}`);
     }
     
+    // Обновляем URL страницы с параметрами
+    const uiParams = params.join('&');
+    const newUrl = `${window.location.pathname}?${uiParams}`;
+    window.history.pushState({ path: newUrl }, '', newUrl);
+    
     url += params.join('&');
     
     // Запрос данных

@@ -43,4 +43,4 @@ USER appuser
 EXPOSE 8080
 
 # Прямой запуск приложения
-ENTRYPOINT ["/app/entrypoint.sh"] 
+ENTRYPOINT ["/app/entrypoint.sh"]
