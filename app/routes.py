@@ -759,3 +759,84 @@ def api_test_conversion():
         'id': conversion.id,
         'message': 'Тестовая конверсия успешно добавлена'
     }), 201
+
+@bp.route('/conversions/prefix/<string:ref_prefix>', methods=['GET'])
+@login_required
+def conversions_by_prefix(ref_prefix):
+    """Страница с детальной статистикой конверсий по конкретному префиксу"""
+    try:
+        # Получаем параметры фильтрации
+        start_date = request.args.get('start_date', '')
+        end_date = request.args.get('end_date', '')
+        
+        start_date_obj = None
+        end_date_obj = None
+        
+        if start_date:
+            try:
+                start_date_obj = datetime.strptime(start_date, '%Y-%m-%d').date()
+            except ValueError:
+                flash('Неверный формат даты начала', 'warning')
+        
+        if end_date:
+            try:
+                end_date_obj = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                flash('Неверный формат даты окончания', 'warning')
+        
+        # Формируем базовый запрос для статистики
+        from sqlalchemy import func
+        
+        # Получаем суммарную статистику по form_id
+        summary_query = db.session.query(
+            Conversion.form_id,
+            func.count(Conversion.id).label('count')
+        ).filter(Conversion.ref_prefix == ref_prefix)
+        
+        if start_date_obj:
+            summary_query = summary_query.filter(Conversion.date >= start_date_obj)
+        if end_date_obj:
+            summary_query = summary_query.filter(Conversion.date <= end_date_obj)
+            
+        summary_data = summary_query.group_by(Conversion.form_id).order_by(func.count(Conversion.id).desc()).all()
+        
+        # Общее количество конверсий
+        total_conversions = sum(count for _, count in summary_data)
+        
+        # Подготовка данных для графиков
+        form_ids = [form_id for form_id, _ in summary_data]
+        counts = [count for _, count in summary_data]
+        
+        # Получаем статистику по дням
+        daily_query = db.session.query(
+            Conversion.date,
+            func.count(Conversion.id).label('count')
+        ).filter(Conversion.ref_prefix == ref_prefix)
+        
+        if start_date_obj:
+            daily_query = daily_query.filter(Conversion.date >= start_date_obj)
+        if end_date_obj:
+            daily_query = daily_query.filter(Conversion.date <= end_date_obj)
+            
+        daily_data = daily_query.group_by(Conversion.date).order_by(Conversion.date).all()
+        
+        # Подготовка данных для графика по дням
+        dates = [date.strftime('%d.%m.%Y') for date, _ in daily_data]
+        daily_counts = [count for _, count in daily_data]
+        
+        return render_template('conversions_by_prefix.html',
+                            title=f'Конверсии по префиксу {ref_prefix}',
+                            ref_prefix=ref_prefix,
+                            summary_data=summary_data,
+                            total_conversions=total_conversions,
+                            form_ids=form_ids,
+                            counts=counts,
+                            daily_data=daily_data,
+                            dates=dates,
+                            daily_counts=daily_counts,
+                            start_date=start_date,
+                            end_date=end_date)
+    except Exception as e:
+        logger.error(f"Ошибка при отображении статистики по префиксу {ref_prefix}: {str(e)}")
+        flash(f'Произошла ошибка при загрузке статистики: {str(e)}', 'danger')
+        return redirect(url_for('main.conversions_list', ref_prefix=ref_prefix))

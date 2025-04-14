@@ -34,15 +34,37 @@
                                 {% endfor %}
                             </select>
                         </div>
+                        
                         <div class="mb-3">
-                            <label for="startDate" class="form-label">Дата начала</label>
-                            <input type="date" class="form-control" id="startDate" name="startDate">
+                            <label for="dateRange" class="form-label">Период</label>
+                            <select class="form-select" id="dateRange" name="dateRange">
+                                <option value="custom">Произвольный период</option>
+                                <option value="today">Сегодня</option>
+                                <option value="yesterday">Вчера</option>
+                                <option value="last7days">Последние 7 дней</option>
+                                <option value="currentWeek">Текущая неделя</option>
+                                <option value="last30days">Последние 30 дней</option>
+                                <option value="prevMonth">Предыдущий месяц</option>
+                                <option value="currentMonth">Текущий месяц</option>
+                                <option value="currentYear">Текущий год</option>
+                                <option value="prevYear">Прошлый год</option>
+                            </select>
                         </div>
-                        <div class="mb-3">
-                            <label for="endDate" class="form-label">Дата окончания</label>
-                            <input type="date" class="form-control" id="endDate" name="endDate">
+                        
+                        <div id="customDateRange">
+                            <div class="mb-3">
+                                <label for="startDate" class="form-label">Дата начала</label>
+                                <input type="date" class="form-control" id="startDate" name="startDate">
+                            </div>
+                            <div class="mb-3">
+                                <label for="endDate" class="form-label">Дата окончания</label>
+                                <input type="date" class="form-control" id="endDate" name="endDate">
+                            </div>
                         </div>
-                        <button type="submit" class="btn btn-primary">Применить</button>
+                        
+                        <div class="d-grid">
+                            <button type="submit" class="btn btn-primary">Применить</button>
+                        </div>
                     </form>
                 </div>
             </div>
@@ -156,12 +178,109 @@ $(document).ready(function() {
     // Загрузка начальных данных
     loadStats();
     
+    // Обработчик выбора периода
+    $('#dateRange').on('change', function() {
+        const selectedRange = $(this).val();
+        
+        if (selectedRange === 'custom') {
+            $('#customDateRange').show();
+        } else {
+            $('#customDateRange').hide();
+            
+            // Устанавливаем даты в зависимости от выбранного периода
+            const dates = calculateDateRange(selectedRange);
+            if (dates) {
+                $('#startDate').val(dates.startDate);
+                $('#endDate').val(dates.endDate);
+            }
+        }
+    });
+    
     // Обработчик формы
     $('#statsForm').on('submit', function(e) {
         e.preventDefault();
         loadStats();
     });
+    
+    // Инициализация - скрываем дополнительные поля дат если выбран предопределенный период
+    if ($('#dateRange').val() !== 'custom') {
+        $('#customDateRange').hide();
+    }
 });
+
+function calculateDateRange(rangeType) {
+    const today = new Date();
+    let startDate = new Date();
+    let endDate = new Date();
+    
+    switch(rangeType) {
+        case 'today':
+            // Старт и конец - сегодня
+            break;
+            
+        case 'yesterday':
+            // Вчерашний день
+            startDate.setDate(today.getDate() - 1);
+            endDate.setDate(today.getDate() - 1);
+            break;
+            
+        case 'last7days':
+            // Последние 7 дней
+            startDate.setDate(today.getDate() - 6);
+            break;
+            
+        case 'currentWeek':
+            // Текущая неделя (с понедельника)
+            const dayOfWeek = today.getDay() || 7; // если 0 (воскресенье), то берем 7
+            startDate.setDate(today.getDate() - dayOfWeek + 1);
+            break;
+            
+        case 'last30days':
+            // Последние 30 дней
+            startDate.setDate(today.getDate() - 29);
+            break;
+            
+        case 'prevMonth':
+            // Предыдущий месяц
+            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+            break;
+            
+        case 'currentMonth':
+            // Текущий месяц
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+            endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            break;
+            
+        case 'currentYear':
+            // Текущий год
+            startDate = new Date(today.getFullYear(), 0, 1);
+            endDate = new Date(today.getFullYear(), 11, 31);
+            break;
+            
+        case 'prevYear':
+            // Прошлый год
+            startDate = new Date(today.getFullYear() - 1, 0, 1);
+            endDate = new Date(today.getFullYear() - 1, 11, 31);
+            break;
+            
+        default:
+            return null;
+    }
+    
+    // Форматируем даты для input type="date": YYYY-MM-DD
+    return {
+        startDate: formatDateForInput(startDate),
+        endDate: formatDateForInput(endDate)
+    };
+}
+
+function formatDateForInput(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+}
 
 function loadStats() {
     const refPrefix = $('#refPrefix').val();
