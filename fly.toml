@@ -7,7 +7,11 @@ app = "facebook-bayers"
   PORT = "8080"
   LOG_TO_STDOUT = "1"
   PYTHONUNBUFFERED = "1"
-  DATABASE_URL = "sqlite:///app.db"
+  DATABASE_URL = "sqlite:////data/app.db"
+
+[mounts]
+  source = "facebook_bayers_data"
+  destination = "/data"
 
 [http_service]
   internal_port = 8080

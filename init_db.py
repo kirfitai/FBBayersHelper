@@ -1,3 +1,9 @@
+"""
+Скрипт для инициализации базы данных.
+Импортирует все необходимые модели и создает таблицы.
+Может использоваться как самостоятельно, так и в контейнере.
+"""
+
 from app import create_app, db
 from app.models.user import User
 from app.models.setup import Setup, ThresholdEntry, CampaignSetup
@@ -18,7 +24,7 @@ def init_db():
             admin.set_password('admin')
             db.session.add(admin)
             db.session.commit()
-            print("Default admin user created.")
+            print("Default admin user created with credentials: admin/admin")
         else:
             print("Users already exist. Skipping default user creation.")
 

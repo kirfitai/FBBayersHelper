@@ -22,22 +22,28 @@ ENV LOG_TO_STDOUT=1
 ENV SECRET_KEY=default-dev-key-change-in-production
 ENV LC_ALL=C.UTF-8
 ENV LANG=C.UTF-8
-ENV DATABASE_URL=sqlite:///app.db
+ENV DATABASE_URL=sqlite:////data/app.db
+
+# Создание директории для данных
+RUN mkdir -p /data
 
 # Создание пользователя без привилегий
 RUN useradd -m appuser
 
-# Изменение прав на директорию приложения
+# Изменение прав на директории
 RUN chown -R appuser:appuser /app
+RUN chown -R appuser:appuser /data
 RUN chmod 755 /app
+RUN chmod 755 /data
 
 USER appuser
 
 # Открытие порта для работы приложения
 EXPOSE 8080
 
-# Простой пример страницы для проверки работы
-RUN echo 'from flask import Flask\napp = Flask(__name__)\n@app.route("/")\ndef hello():\n    return "<h1>FB Bayers Helper</h1><p>Приложение успешно запущено!</p>"\nif __name__ == "__main__":\n    app.run(host="0.0.0.0", port=8080)' > simple_app.py
+# Скрипт для инициализации базы данных и запуска приложения
+RUN echo '#!/bin/bash\npython -c "from app import db, create_app; app = create_app(); app.app_context().push(); db.create_all()"\nexec gunicorn --bind 0.0.0.0:$PORT run:app' > /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 # Прямой запуск приложения
-CMD gunicorn --bind 0.0.0.0:$PORT simple_app:app 
+ENTRYPOINT ["/app/entrypoint.sh"] 
