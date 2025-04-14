@@ -96,11 +96,13 @@
         <div class="col-md-12">
             <div class="card">
                 <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5>Конверсии (всего: {{ conversions.total }})</h5>
+                    <h5>Конверсии {% if conversions and conversions.total %}(всего: {{ conversions.total }}){% endif %}</h5>
+                    {% if conversions and conversions.pages > 1 %}
                     <span>Страница {{ conversions.page }} из {{ conversions.pages }}</span>
+                    {% endif %}
                 </div>
                 <div class="card-body">
-                    {% if conversions.items %}
+                    {% if conversions and conversions.items %}
                     <div class="table-responsive">
                         <table class="table table-striped table-hover">
                             <thead>
@@ -130,6 +132,7 @@
                         </table>
                     </div>
                     
+                    {% if conversions.pages > 1 %}
                     <nav aria-label="Pagination">
                         <ul class="pagination justify-content-center">
                             {% if conversions.has_prev %}
@@ -165,9 +168,13 @@
                             {% endif %}
                         </ul>
                     </nav>
+                    {% endif %}
                     {% else %}
                     <div class="alert alert-info">
                         <p class="mb-0">Нет конверсий, соответствующих заданным критериям.</p>
+                        <p class="mt-2 mb-0">
+                            <a href="{{ url_for('main.add_test_conversion') }}" class="btn btn-sm btn-primary">Добавить тестовую конверсию</a>
+                        </p>
                     </div>
                     {% endif %}
                 </div>

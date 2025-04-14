@@ -9,6 +9,7 @@ class Conversion(db.Model):
     ref = db.Column(db.String(255), index=True)  # Полный ref параметр
     ref_prefix = db.Column(db.String(3), index=True)  # Первые 3 символа ref параметра
     form_id = db.Column(db.String(50), index=True)  # значение ad id из FB
+    quid = db.Column(db.String(100), index=True)  # Уникальный идентификатор запроса
     timestamp = db.Column(db.DateTime, default=datetime.utcnow, index=True)
     date = db.Column(db.Date, index=True)  # Дата конверсии для группировки по дням
     
@@ -16,10 +17,11 @@ class Conversion(db.Model):
     ip_address = db.Column(db.String(50))
     user_agent = db.Column(db.Text)
     
-    def __init__(self, ref, form_id, timestamp=None, ip_address=None, user_agent=None):
+    def __init__(self, ref, form_id, quid=None, timestamp=None, ip_address=None, user_agent=None):
         self.ref = ref
         self.ref_prefix = ref[:3] if ref and len(ref) >= 3 else None
         self.form_id = form_id
+        self.quid = quid
         
         if timestamp:
             self.timestamp = timestamp
@@ -37,6 +39,7 @@ class Conversion(db.Model):
             'ref': self.ref,
             'ref_prefix': self.ref_prefix,
             'form_id': self.form_id,
+            'quid': self.quid,
             'timestamp': self.timestamp.isoformat(),
             'date': self.date.isoformat() if self.date else None,
             'ip_address': self.ip_address,
@@ -60,18 +63,26 @@ class Conversion(db.Model):
         """Получение статистики по дням для конкретного префикса ref"""
         from sqlalchemy import func
         
-        query = db.session.query(
-            Conversion.date,
-            Conversion.form_id,
-            func.count(Conversion.id).label('count')
-        ).filter_by(ref_prefix=ref_prefix)
-        
-        if start_date:
-            query = query.filter(Conversion.date >= start_date)
-        if end_date:
-            query = query.filter(Conversion.date <= end_date)
+        try:
+            query = db.session.query(
+                Conversion.date,
+                Conversion.form_id,
+                func.count(Conversion.id).label('count')
+            ).filter_by(ref_prefix=ref_prefix)
             
-        return query.group_by(Conversion.date, Conversion.form_id).all()
+            if start_date:
+                query = query.filter(Conversion.date >= start_date)
+            if end_date:
+                query = query.filter(Conversion.date <= end_date)
+            
+            return query.group_by(Conversion.date, Conversion.form_id).all()
+        except Exception as e:
+            # Логирование ошибки
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.error(f"Ошибка при получении статистики по дням: {str(e)}")
+            # Возвращаем пустой список в случае ошибки
+            return []
     
     def __repr__(self):
         return f'<Conversion {self.id} ref={self.ref_prefix}>' 

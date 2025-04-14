@@ -7,11 +7,14 @@
     <div class="alert alert-info">
         <h5>Просмотр и работа с конверсиями</h5>
         <p>На этой странице вы можете увидеть аналитику по конверсиям, сгруппированным по префиксам ref.</p>
-        <p>Для просмотра полного списка конверсий с возможностью фильтрации и пагинации перейдите на 
+        <div class="d-flex gap-2">
             <a href="{{ url_for('main.conversions_list') }}" class="btn btn-primary">
                 <i class="fas fa-list"></i> Список конверсий
             </a>
-        </p>
+            <a href="{{ url_for('main.add_test_conversion') }}" class="btn btn-success">
+                <i class="fas fa-plus"></i> Добавить тестовую конверсию
+            </a>
+        </div>
     </div>
     
     <div class="row">
@@ -195,9 +198,19 @@ function loadStats() {
         success: function(response) {
             $('#loadingStats').addClass('d-none');
             
+            // Проверяем на наличие ошибки в ответе
+            if (response.error) {
+                $('#noDataMessage').removeClass('d-none').text(response.error);
+                if (prefixChart) {
+                    prefixChart.destroy();
+                    prefixChart = null;
+                }
+                return;
+            }
+            
             // Проверка на полностью пустой ответ или пустую статистику
-            if (!response || (response.stats && Object.keys(response.stats).length === 0)) {
-                $('#noDataMessage').removeClass('d-none');
+            if (!response || !response.stats || Object.keys(response.stats).length === 0) {
+                $('#noDataMessage').removeClass('d-none').text('Нет данных за выбранный период');
                 if (prefixChart) {
                     prefixChart.destroy();
                     prefixChart = null;
@@ -217,6 +230,12 @@ function loadStats() {
             $('#loadingStats').addClass('d-none');
             $('#noDataMessage').removeClass('d-none').text('Ошибка при загрузке данных');
             console.error('Ошибка:', xhr.responseText);
+            
+            // Уничтожаем график если он был
+            if (prefixChart) {
+                prefixChart.destroy();
+                prefixChart = null;
+            }
         }
     });
 }

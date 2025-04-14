@@ -11,6 +11,8 @@ from app.models.conversion import Conversion
 import json
 import logging
 from datetime import datetime
+import random
+import string
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -495,68 +497,80 @@ def add_conversion():
 @login_required
 def get_conversion_stats():
     """Получение статистики по конверсиям"""
-    ref_prefix = request.args.get('ref_prefix')
-    start_date = request.args.get('start_date')
-    end_date = request.args.get('end_date')
-    
-    if start_date:
-        try:
-            start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
-        except ValueError:
-            return jsonify({'error': 'Неверный формат даты начала (YYYY-MM-DD)'}), 400
-    
-    if end_date:
-        try:
-            end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
-        except ValueError:
-            return jsonify({'error': 'Неверный формат даты окончания (YYYY-MM-DD)'}), 400
-    
-    if ref_prefix:
-        # Статистика по конкретному префиксу
-        daily_stats = Conversion.get_daily_stats_by_ref_prefix(ref_prefix, start_date, end_date)
-        
-        result = {}
-        for date, form_id, count in daily_stats:
-            date_str = date.strftime('%Y-%m-%d')
-            if date_str not in result:
-                result[date_str] = {}
-            result[date_str][form_id] = count
-        
-        return jsonify({
-            'ref_prefix': ref_prefix,
-            'stats': result
-        })
-    else:
-        # Общая статистика по всем префиксам
-        from sqlalchemy import func
-        
-        query = db.session.query(
-            Conversion.ref_prefix,
-            func.count(Conversion.id).label('count')
-        ).group_by(Conversion.ref_prefix)
+    try:
+        ref_prefix = request.args.get('ref_prefix')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
         
         if start_date:
-            query = query.filter(Conversion.date >= start_date)
-        if end_date:
-            query = query.filter(Conversion.date <= end_date)
-            
-        stats = query.all()
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'error': 'Неверный формат даты начала (YYYY-MM-DD)'}), 400
         
+        if end_date:
+            try:
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return jsonify({'error': 'Неверный формат даты окончания (YYYY-MM-DD)'}), 400
+        
+        if ref_prefix:
+            # Статистика по конкретному префиксу
+            daily_stats = Conversion.get_daily_stats_by_ref_prefix(ref_prefix, start_date, end_date)
+            
+            result = {}
+            for date, form_id, count in daily_stats:
+                date_str = date.strftime('%Y-%m-%d')
+                if date_str not in result:
+                    result[date_str] = {}
+                result[date_str][form_id] = count
+            
+            return jsonify({
+                'ref_prefix': ref_prefix,
+                'stats': result
+            })
+        else:
+            # Общая статистика по всем префиксам
+            from sqlalchemy import func
+            
+            query = db.session.query(
+                Conversion.ref_prefix,
+                func.count(Conversion.id).label('count')
+            ).filter(Conversion.ref_prefix != None).group_by(Conversion.ref_prefix)
+            
+            if start_date:
+                query = query.filter(Conversion.date >= start_date)
+            if end_date:
+                query = query.filter(Conversion.date <= end_date)
+                
+            stats = query.all()
+            
+            return jsonify({
+                'stats': {prefix: count for prefix, count in stats if prefix}
+            })
+    except Exception as e:
+        logger.error(f"Ошибка при получении статистики конверсий: {str(e)}")
         return jsonify({
-            'stats': {prefix: count for prefix, count in stats}
-        })
+            'error': 'Ошибка при получении статистики: ' + str(e),
+            'stats': {}
+        }), 500
 
 @bp.route('/conversions', methods=['GET'])
 @login_required
 def conversions_page():
     """Страница с аналитикой конверсий"""
-    # Получаем уникальные ref_prefix
-    ref_prefixes = db.session.query(Conversion.ref_prefix).distinct().all()
-    ref_prefixes = [r[0] for r in ref_prefixes if r[0]]
-    
-    return render_template('conversions.html', 
-                          title='Конверсии', 
-                          ref_prefixes=ref_prefixes)
+    try:
+        # Получаем уникальные ref_prefix
+        ref_prefixes = db.session.query(Conversion.ref_prefix).distinct().all()
+        ref_prefixes = [r[0] for r in ref_prefixes if r[0]]
+        
+        return render_template('conversions.html', 
+                              title='Конверсии', 
+                              ref_prefixes=ref_prefixes)
+    except Exception as e:
+        logger.error(f"Ошибка при отображении страницы конверсий: {str(e)}")
+        flash(f'Произошла ошибка при загрузке страницы конверсий', 'danger')
+        return redirect(url_for('main.index'))
 
 @bp.route('/conversions/list', methods=['GET'])
 @login_required
@@ -688,9 +702,46 @@ def api_conversions_list():
     
     return jsonify(result)
 
-@bp.route('/api/conversion/test', methods=['GET'])
+@bp.route('/add-test-conversion', methods=['GET'])
+@login_required
 def add_test_conversion():
-    """Добавляет тестовую конверсию для проверки функциональности"""
+    """Добавляет тестовую конверсию и возвращает на страницу конверсий"""
+    try:
+        # Создаем тестовую запись о конверсии со случайными данными
+        # Генерируем случайный ref с префиксом
+        prefix = random.choice(['abc', 'xyz', 'test', 'promo'])
+        suffix = ''.join(random.choices(string.ascii_lowercase + string.digits, k=5))
+        ref = f"{prefix}{suffix}"
+        
+        # Генерируем случайный form_id
+        form_id = f"form_{random.randint(1000, 9999)}"
+        
+        # Генерируем случайный quid
+        quid = f"quid_{random.randint(10000, 99999)}"
+        
+        # Создаем конверсию
+        conversion = Conversion(
+            ref=ref,
+            form_id=form_id,
+            quid=quid,
+            ip_address=request.remote_addr,
+            user_agent=request.user_agent.string if request.user_agent else None
+        )
+        
+        db.session.add(conversion)
+        db.session.commit()
+        
+        flash(f'Тестовая конверсия успешно добавлена (ID: {conversion.id}, префикс: {conversion.ref_prefix})', 'success')
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении тестовой конверсии: {str(e)}")
+        flash('Произошла ошибка при добавлении тестовой конверсии', 'danger')
+    
+    # Возвращаемся на страницу списка конверсий
+    return redirect(url_for('main.conversions_list'))
+
+@bp.route('/api/conversion/test', methods=['GET'])
+def api_test_conversion():
+    """Добавляет тестовую конверсию для проверки функциональности API"""
     # Создаем тестовую запись о конверсии
     conversion = Conversion(
         ref='test123',
