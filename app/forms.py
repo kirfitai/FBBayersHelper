@@ -6,7 +6,7 @@ from flask import current_app
 
 class ThresholdForm(FlaskForm):
     spend = FloatField('Затраты ($)', validators=[DataRequired(), NumberRange(min=0.01)])
-    conversions = IntegerField('Конверсии', validators=[DataRequired(), NumberRange(min=1)])
+    conversions = IntegerField('Конверсии', validators=[DataRequired(), NumberRange(min=0)])
     
     class Meta:
         # Отключение CSRF для вложенных форм

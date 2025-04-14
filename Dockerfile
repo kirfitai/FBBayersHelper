@@ -33,8 +33,8 @@ RUN useradd -m appuser
 # Изменение прав на директории
 RUN chown -R appuser:appuser /app
 RUN chown -R appuser:appuser /data
-RUN chmod 755 /app
-RUN chmod 755 /data
+RUN chmod 777 /app
+RUN chmod 777 /data
 
 USER appuser
 
@@ -42,7 +42,18 @@ USER appuser
 EXPOSE 8080
 
 # Скрипт для инициализации базы данных и запуска приложения
-RUN echo '#!/bin/bash\npython -c "from app import db, create_app; app = create_app(); app.app_context().push(); db.create_all()"\nexec gunicorn --bind 0.0.0.0:$PORT run:app' > /app/entrypoint.sh
+RUN echo '#!/bin/bash\n\
+echo "Starting database initialization..."\n\
+touch /data/app.db\n\
+ls -la /data\n\
+python -c "from app import db, create_app; from app.models.user import User; print(\"Creating app context...\"); app = create_app(); app.app_context().push(); print(\"Creating database tables...\"); db.create_all(); print(\"Checking for existing users...\"); if User.query.count() == 0: print(\"No users found, creating admin...\"); admin = User(username=\"admin\", email=\"admin@example.com\"); admin.set_password(\"admin\"); db.session.add(admin); db.session.commit(); print(\"Admin user created successfully.\")"\n\
+if [ $? -ne 0 ]; then\n\
+  echo "Database initialization failed!"\n\
+  exit 1\n\
+fi\n\
+echo "Database initialization completed successfully."\n\
+echo "Starting gunicorn server..."\n\
+exec gunicorn --bind 0.0.0.0:$PORT --workers 1 --log-level debug run:app' > /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Прямой запуск приложения
