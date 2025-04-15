@@ -8,7 +8,7 @@ class ThresholdEntry(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     setup_id = db.Column(db.Integer, db.ForeignKey('setups.id', ondelete='CASCADE'))
     spend = db.Column(db.Float, nullable=False)
-    conversions = db.Column(db.Integer, nullable=False)
+    conversions = db.Column(db.Integer, nullable=False, default=0)
     
     def __repr__(self):
         return f'<Threshold ${self.spend} - {self.conversions}>'

@@ -53,10 +53,12 @@ def create_setup():
         
         # Добавление порогов
         for threshold_form in form.thresholds.data:
+            # Убедимся, что конверсии не менее 0 (можно установить 0)
+            conversions = max(0, threshold_form['conversions'] or 0)
             threshold = ThresholdEntry(
                 setup_id=setup.id,
                 spend=threshold_form['spend'],
-                conversions=threshold_form['conversions']
+                conversions=conversions
             )
             db.session.add(threshold)
         
@@ -82,10 +84,12 @@ def edit_setup(id):
         
         # Добавление новых порогов
         for threshold_form in form.thresholds.data:
+            # Убедимся, что конверсии не менее 0 (можно установить 0)
+            conversions = max(0, threshold_form['conversions'] or 0)
             threshold = ThresholdEntry(
                 setup_id=setup.id,
                 spend=threshold_form['spend'],
-                conversions=threshold_form['conversions']
+                conversions=conversions
             )
             db.session.add(threshold)
         
