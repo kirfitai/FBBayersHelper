@@ -1,12 +1,12 @@
 from flask_wtf import FlaskForm
 from wtforms import StringField, IntegerField, FloatField, BooleanField, SubmitField
 from wtforms import FieldList, FormField, SelectField, HiddenField
-from wtforms.validators import DataRequired, NumberRange, Optional
+from wtforms.validators import DataRequired, InputRequired, NumberRange, Optional
 from flask import current_app
 
 class ThresholdForm(FlaskForm):
     spend = FloatField('Затраты ($)', validators=[DataRequired(), NumberRange(min=0.01)])
-    conversions = IntegerField('Конверсии', validators=[DataRequired(), NumberRange(min=0)])
+    conversions = IntegerField('Конверсии', validators=[InputRequired(), NumberRange(min=0)])
     
     def validate_conversions(self, field):
         # Принимаем 0 как допустимое значение для конверсий
