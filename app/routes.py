@@ -620,7 +620,17 @@ def conversions_list():
         query = query.order_by(Conversion.timestamp.desc())
         
         # Получаем данные с пагинацией
-        conversions = query.paginate(page=page, per_page=per_page)
+        try:
+            conversions = query.paginate(page=page, per_page=per_page)
+        except Exception as e:
+            # Обработка ошибки пагинации - возвращаем первую страницу
+            logger.error(f"Ошибка при пагинации конверсий: {str(e)}")
+            conversions = query.paginate(page=1, per_page=per_page)
+            flash('Произошла ошибка при пагинации, показана первая страница', 'warning')
+        
+        # Обеспечиваем ненулевые значения для шаблонизатора
+        if conversions.pages == 0:
+            conversions.pages = 1
         
         # Получаем уникальные значения для фильтров
         unique_prefixes = db.session.query(Conversion.ref_prefix).distinct().all()
