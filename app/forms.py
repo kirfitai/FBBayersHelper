@@ -8,6 +8,11 @@ class ThresholdForm(FlaskForm):
     spend = FloatField('Затраты ($)', validators=[DataRequired(), NumberRange(min=0.01)])
     conversions = IntegerField('Конверсии', validators=[DataRequired(), NumberRange(min=0)])
     
+    def validate_conversions(self, field):
+        # Принимаем 0 как допустимое значение для конверсий
+        if field.data is None:
+            field.data = 0
+    
     class Meta:
         # Отключение CSRF для вложенных форм
         csrf = False

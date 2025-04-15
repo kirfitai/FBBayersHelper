@@ -63,7 +63,7 @@
                                 </div>
                                 <div class="col-md-5">
                                     {{ threshold.conversions.label(class="form-label") }}
-                                    {{ threshold.conversions(class="form-control") }}
+                                    {{ threshold.conversions(class="form-control", type="number", min="0") }}
                                 </div>
                                 <div class="col-md-2 d-flex align-items-end">
                                     <button type="button" class="btn btn-danger remove-threshold">Удалить</button>
