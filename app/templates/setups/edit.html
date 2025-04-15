@@ -43,14 +43,15 @@
             </div>
             
             <div class="card mb-4">
-                <div class="card-header d-flex justify-content-between align-items-center">
+                <div class="card-header d-flex justify-content-between align-items-center bg-info text-white">
                     <h5 class="mb-0">Пороговые значения</h5>
                     <button type="button" class="btn btn-sm btn-success" id="add-threshold">Добавить условие</button>
                 </div>
                 <div class="card-body">
                     <div class="alert alert-info">
-                        <strong>Как это работает:</strong> Укажите пары "затраты - количество конверсий". 
-                        Если объявление потратило сумму, но не достигло указанного количества конверсий, оно будет отключено.
+                        <h5 class="alert-heading">Как это работает:</h5>
+                        <p>Укажите пары "затраты - количество конверсий". Если объявление потратило сумму, но не достигло указанного количества конверсий, оно будет отключено.</p>
+                        <p><strong>Важно:</strong> Если вы установите количество конверсий равным 0, объявление будет отключено при достижении указанной суммы затрат независимо от количества полученных конверсий.</p>
                     </div>
                     
                     <div id="thresholds-container">
