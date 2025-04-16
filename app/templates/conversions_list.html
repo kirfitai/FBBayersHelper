@@ -181,7 +181,7 @@
                         <ul class="pagination justify-content-center">
                             {% if conversions.has_prev %}
                             <li class="page-item">
-                                <a class="page-link" href="{{ url_for('main.conversions_list', page=conversions.prev_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date) }}">
+                                <a class="page-link" href="{{ url_for('main.conversions_list', page=conversions.prev_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date, dateRange=date_range) }}">
                                     &laquo; Предыдущая
                                 </a>
                             </li>
@@ -196,7 +196,7 @@
                             {% with end = [conversions.pages or 1, conversions.page + 3]|min %}
                             {% for page_num in range(start, end) %}
                             <li class="page-item {% if page_num == conversions.page %}active{% endif %}">
-                                <a class="page-link" href="{{ url_for('main.conversions_list', page=page_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date) }}">
+                                <a class="page-link" href="{{ url_for('main.conversions_list', page=page_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date, dateRange=date_range) }}">
                                     {{ page_num }}
                                 </a>
                             </li>
@@ -206,7 +206,7 @@
                             
                             {% if conversions.has_next %}
                             <li class="page-item">
-                                <a class="page-link" href="{{ url_for('main.conversions_list', page=conversions.next_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date) }}">
+                                <a class="page-link" href="{{ url_for('main.conversions_list', page=conversions.next_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date, dateRange=date_range) }}">
                                     Следующая &raquo;
                                 </a>
                             </li>
@@ -232,47 +232,82 @@
 {% block scripts %}
 <script>
 $(document).ready(function() {
+    // Всегда показываем поля дат
+    $('#startDateContainer, #endDateContainer').show();
+    
     // Обработчик выбора периода
     $('#dateRange').on('change', function() {
         const selectedRange = $(this).val();
         
-        if (selectedRange === 'custom') {
-            $('#startDateContainer, #endDateContainer').show();
-        } else {
+        if (selectedRange !== 'custom') {
             // Устанавливаем даты в зависимости от выбранного периода
             const dates = calculateDateRange(selectedRange);
             if (dates) {
                 $('#start_date').val(dates.startDate);
                 $('#end_date').val(dates.endDate);
                 
-                // Отображаем поля с датами на короткое время, чтобы пользователь увидел изменения
-                $('#startDateContainer, #endDateContainer').show();
+                // Сохраняем значения в localStorage
+                localStorage.setItem('selectedDateRange', selectedRange);
+                localStorage.setItem('selectedStartDate', dates.startDate);
+                localStorage.setItem('selectedEndDate', dates.endDate);
                 
-                // Отправляем форму через небольшую задержку
-                setTimeout(function() {
-                    $('form').submit();
-                }, 300);
+                // Автоматически отправляем форму после выбора предустановленного периода
+                $('form').submit();
             }
+        } else {
+            // Для произвольного периода просто сохраняем выбор
+            localStorage.setItem('selectedDateRange', 'custom');
         }
     });
     
-    // Инициализация
+    // Обработчики изменения дат для сохранения значений
+    $('#start_date, #end_date').on('change', function() {
+        localStorage.setItem('selectedStartDate', $('#start_date').val());
+        localStorage.setItem('selectedEndDate', $('#end_date').val());
+    });
+    
+    // Инициализация при загрузке страницы
     const initialDateRange = $('#dateRange').val();
-    if (initialDateRange !== 'custom' && initialDateRange !== '') {
-        // Если выбран не произвольный период, но есть даты - отображаем их
-        if ($('#start_date').val() || $('#end_date').val()) {
-            $('#startDateContainer, #endDateContainer').show();
-        } else {
-            $('#startDateContainer, #endDateContainer').hide();
-        }
-        
-        // Устанавливаем даты при загрузке страницы
+    const savedDateRange = localStorage.getItem('selectedDateRange');
+    const savedStartDate = localStorage.getItem('selectedStartDate');
+    const savedEndDate = localStorage.getItem('selectedEndDate');
+    
+    // Если есть сохраненные значения и нет параметров в URL
+    if (!initialDateRange && savedDateRange) {
+        $('#dateRange').val(savedDateRange);
+    }
+    
+    // Устанавливаем даты из сохраненных значений, если нет значений в полях
+    if (!$('#start_date').val() && savedStartDate) {
+        $('#start_date').val(savedStartDate);
+    }
+    
+    if (!$('#end_date').val() && savedEndDate) {
+        $('#end_date').val(savedEndDate);
+    }
+    
+    // Если выбран предустановленный период, но нет дат в полях,
+    // устанавливаем даты согласно выбранному периоду
+    if (initialDateRange && initialDateRange !== 'custom' && (!$('#start_date').val() || !$('#end_date').val())) {
         const dates = calculateDateRange(initialDateRange);
         if (dates) {
             $('#start_date').val(dates.startDate);
             $('#end_date').val(dates.endDate);
+            
+            // Сохраняем значения
+            localStorage.setItem('selectedDateRange', initialDateRange);
+            localStorage.setItem('selectedStartDate', dates.startDate);
+            localStorage.setItem('selectedEndDate', dates.endDate);
         }
     }
+    
+    // Обработчик клика по ссылке "Сбросить"
+    $('a[href="{{ url_for("main.conversions_list") }}"]').on('click', function() {
+        // Очищаем сохраненные значения дат
+        localStorage.removeItem('selectedDateRange');
+        localStorage.removeItem('selectedStartDate');
+        localStorage.removeItem('selectedEndDate');
+    });
 });
 
 function calculateDateRange(rangeType) {
