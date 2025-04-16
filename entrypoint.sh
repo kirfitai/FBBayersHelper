@@ -15,6 +15,13 @@ if [ $? -ne 0 ]; then
 fi
 
 echo "Database initialization completed successfully."
+echo "Starting scheduler in background..."
+
+# Запускаем планировщик в фоновом режиме
+python /app/scheduler.py &
+SCHEDULER_PID=$!
+echo "Scheduler started with PID: $SCHEDULER_PID"
+
 echo "Starting gunicorn server with debug logging..."
 
 # Запускаем приложение с подробным логированием
