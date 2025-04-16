@@ -175,6 +175,8 @@ fetch('{{ request.host_url }}api/conversion/add', {
 let prefixChart = null;
 
 $(document).ready(function() {
+    console.log('Conversions page loaded, initializing dates...');
+    
     // Инициализируем даты при загрузке
     initializeDateFields();
     
@@ -184,6 +186,7 @@ $(document).ready(function() {
     // Обработчик выбора периода
     $('#dateRange').on('change', function() {
         const selectedRange = $(this).val();
+        console.log('Date range changed to:', selectedRange);
         
         if (selectedRange === 'custom') {
             $('#customDateRange').show();
@@ -192,11 +195,15 @@ $(document).ready(function() {
             
             // Устанавливаем даты в зависимости от выбранного периода
             const dates = calculateDateRange(selectedRange);
+            console.log('Calculated dates:', dates);
+            
             if (dates) {
+                console.log('Setting dates to startDate:', dates.startDate, 'endDate:', dates.endDate);
                 $('#startDate').val(dates.startDate);
                 $('#endDate').val(dates.endDate);
                 
                 // Автоматическая отправка формы при выборе периода
+                console.log('Auto-submitting form...');
                 loadStats();
             }
         }
@@ -205,6 +212,7 @@ $(document).ready(function() {
     // Обработчик формы
     $('#statsForm').on('submit', function(e) {
         e.preventDefault();
+        console.log('Form submitted, loading stats...');
         loadStats();
     });
 });
@@ -213,15 +221,18 @@ $(document).ready(function() {
 function initializeDateFields() {
     // Устанавливаем начальные даты при загрузке
     const selectedRange = $('#dateRange').val();
+    console.log('Initializing date fields for range:', selectedRange);
     
     if (selectedRange && selectedRange !== 'custom') {
         $('#customDateRange').hide();
         
         const dates = calculateDateRange(selectedRange);
+        console.log('Calculated initial dates:', dates);
+        
         if (dates) {
+            console.log('Setting initial dates - startDate:', dates.startDate, 'endDate:', dates.endDate);
             $('#startDate').val(dates.startDate);
             $('#endDate').val(dates.endDate);
-            console.log('Dates initialized:', dates);
         }
     } else {
         $('#customDateRange').show();
@@ -229,7 +240,11 @@ function initializeDateFields() {
 }
 
 function calculateDateRange(rangeType) {
+    console.log('Calculating date range for:', rangeType);
+    
     const today = new Date();
+    console.log('Today is:', today);
+    
     let startDate = new Date();
     let endDate = new Date();
     
@@ -289,10 +304,13 @@ function calculateDateRange(rangeType) {
     }
     
     // Форматируем даты для input type="date": YYYY-MM-DD
-    return {
+    const result = {
         startDate: formatDateForInput(startDate),
         endDate: formatDateForInput(endDate)
     };
+    
+    console.log('Returning calculated dates:', result);
+    return result;
 }
 
 function formatDateForInput(date) {

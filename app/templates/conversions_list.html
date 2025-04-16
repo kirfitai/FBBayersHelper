@@ -232,65 +232,64 @@
 {% block scripts %}
 <script>
 $(document).ready(function() {
+    console.log('Page loaded, initializing dates...');
+    
+    // Инициализируем даты при загрузке страницы
+    initializeDateFields();
+    
     // Всегда показываем поля дат
     $('#startDateContainer, #endDateContainer').show();
     
     // Обработчик выбора периода
     $('#dateRange').on('change', function() {
         const selectedRange = $(this).val();
+        console.log('Date range changed to:', selectedRange);
         
         if (selectedRange !== 'custom') {
             // Устанавливаем даты в зависимости от выбранного периода
             const dates = calculateDateRange(selectedRange);
+            console.log('Calculated dates:', dates);
+            
             if (dates) {
                 $('#start_date').val(dates.startDate);
                 $('#end_date').val(dates.endDate);
-                
-                // Сохраняем значения в localStorage
-                localStorage.setItem('selectedDateRange', selectedRange);
-                localStorage.setItem('selectedStartDate', dates.startDate);
-                localStorage.setItem('selectedEndDate', dates.endDate);
+                console.log('Set dates - start:', dates.startDate, 'end:', dates.endDate);
                 
                 // Автоматически отправляем форму после выбора предустановленного периода
                 $('form').submit();
             }
         } else {
-            // Для произвольного периода просто сохраняем выбор
-            localStorage.setItem('selectedDateRange', 'custom');
+            console.log('Custom range selected, not setting dates automatically');
         }
     });
-    
-    // Обработчики изменения дат для сохранения значений
-    $('#start_date, #end_date').on('change', function() {
-        localStorage.setItem('selectedStartDate', $('#start_date').val());
-        localStorage.setItem('selectedEndDate', $('#end_date').val());
-    });
-    
-    // Инициализация при загрузке страницы
-    const initialDateRange = $('#dateRange').val();
-    
-    // Если выбран предустановленный период, устанавливаем соответствующие даты
-    if (initialDateRange && initialDateRange !== 'custom') {
-        const dates = calculateDateRange(initialDateRange);
-        if (dates) {
-            // Только если поля даты пустые или не соответствуют выбранному периоду
-            if (!$('#start_date').val() || !$('#end_date').val()) {
-                $('#start_date').val(dates.startDate);
-                $('#end_date').val(dates.endDate);
-            }
-        }
-    }
     
     // Обработчик клика по ссылке "Сбросить"
     $('a[href="{{ url_for("main.conversions_list") }}"]').on('click', function() {
-        // Очищаем сохраненные значения дат
-        localStorage.removeItem('selectedDateRange');
-        localStorage.removeItem('selectedStartDate');
-        localStorage.removeItem('selectedEndDate');
+        console.log('Reset clicked');
     });
 });
 
+// Функция для инициализации полей дат
+function initializeDateFields() {
+    const selectedRange = $('#dateRange').val();
+    console.log('Initializing dates for range:', selectedRange);
+    
+    // Если выбран предустановленный период, устанавливаем соответствующие даты
+    if (selectedRange && selectedRange !== 'custom') {
+        const dates = calculateDateRange(selectedRange);
+        console.log('Calculated initial dates:', dates);
+        
+        if (dates) {
+            $('#start_date').val(dates.startDate);
+            $('#end_date').val(dates.endDate);
+            console.log('Set initial dates - start:', dates.startDate, 'end:', dates.endDate);
+        }
+    }
+}
+
 function calculateDateRange(rangeType) {
+    console.log('Calculating dates for range type:', rangeType);
+    
     const today = new Date();
     let startDate = new Date();
     let endDate = new Date();
@@ -351,10 +350,13 @@ function calculateDateRange(rangeType) {
     }
     
     // Форматируем даты для input type="date": YYYY-MM-DD
-    return {
+    const result = {
         startDate: formatDateForInput(startDate),
         endDate: formatDateForInput(endDate)
     };
+    
+    console.log('Calculated result:', result);
+    return result;
 }
 
 function formatDateForInput(date) {
