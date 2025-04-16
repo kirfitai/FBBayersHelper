@@ -54,16 +54,16 @@
                                 <div class="mb-3">
                                     <label for="dateRange" class="form-label">Период</label>
                                     <select class="form-select" id="dateRange" name="dateRange">
-                                        <option value="custom">Произвольный период</option>
-                                        <option value="today">Сегодня</option>
-                                        <option value="yesterday">Вчера</option>
-                                        <option value="last7days">Последние 7 дней</option>
-                                        <option value="currentWeek">Текущая неделя</option>
-                                        <option value="last30days">Последние 30 дней</option>
-                                        <option value="prevMonth">Предыдущий месяц</option>
-                                        <option value="currentMonth">Текущий месяц</option>
-                                        <option value="currentYear">Текущий год</option>
-                                        <option value="prevYear">Прошлый год</option>
+                                        <option value="custom" {% if date_range == 'custom' %}selected{% endif %}>Произвольный период</option>
+                                        <option value="today" {% if date_range == 'today' %}selected{% endif %}>Сегодня</option>
+                                        <option value="yesterday" {% if date_range == 'yesterday' %}selected{% endif %}>Вчера</option>
+                                        <option value="last7days" {% if date_range == 'last7days' %}selected{% endif %}>Последние 7 дней</option>
+                                        <option value="currentWeek" {% if date_range == 'currentWeek' %}selected{% endif %}>Текущая неделя</option>
+                                        <option value="last30days" {% if date_range == 'last30days' %}selected{% endif %}>Последние 30 дней</option>
+                                        <option value="prevMonth" {% if date_range == 'prevMonth' %}selected{% endif %}>Предыдущий месяц</option>
+                                        <option value="currentMonth" {% if date_range == 'currentMonth' %}selected{% endif %}>Текущий месяц</option>
+                                        <option value="currentYear" {% if date_range == 'currentYear' %}selected{% endif %}>Текущий год</option>
+                                        <option value="prevYear" {% if date_range == 'prevYear' %}selected{% endif %}>Прошлый год</option>
                                     </select>
                                 </div>
                             </div>
@@ -244,15 +244,34 @@ $(document).ready(function() {
             if (dates) {
                 $('#start_date').val(dates.startDate);
                 $('#end_date').val(dates.endDate);
-                // Сразу отправляем форму
-                $('form').submit();
+                
+                // Отображаем поля с датами на короткое время, чтобы пользователь увидел изменения
+                $('#startDateContainer, #endDateContainer').show();
+                
+                // Отправляем форму через небольшую задержку
+                setTimeout(function() {
+                    $('form').submit();
+                }, 300);
             }
         }
     });
     
-    // Инициализация - если выбрано не "Произвольный период", скрываем поля выбора дат
-    if ($('#dateRange').val() !== 'custom' && $('#dateRange').val() !== '') {
-        $('#startDateContainer, #endDateContainer').hide();
+    // Инициализация
+    const initialDateRange = $('#dateRange').val();
+    if (initialDateRange !== 'custom' && initialDateRange !== '') {
+        // Если выбран не произвольный период, но есть даты - отображаем их
+        if ($('#start_date').val() || $('#end_date').val()) {
+            $('#startDateContainer, #endDateContainer').show();
+        } else {
+            $('#startDateContainer, #endDateContainer').hide();
+        }
+        
+        // Устанавливаем даты при загрузке страницы
+        const dates = calculateDateRange(initialDateRange);
+        if (dates) {
+            $('#start_date').val(dates.startDate);
+            $('#end_date').val(dates.endDate);
+        }
     }
 });
 

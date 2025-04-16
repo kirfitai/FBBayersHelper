@@ -590,6 +590,7 @@ def conversions_list():
         quid = request.args.get('quid', '')
         start_date = request.args.get('start_date', '')
         end_date = request.args.get('end_date', '')
+        date_range = request.args.get('dateRange', '')
         
         # Строим запрос с фильтрами
         query = Conversion.query
@@ -649,6 +650,7 @@ def conversions_list():
                               quid=quid,
                               start_date=start_date,
                               end_date=end_date,
+                              date_range=date_range,  # Передаем выбранный период в шаблон
                               unique_prefixes=[p[0] for p in unique_prefixes if p[0]],
                               unique_form_ids=[f[0] for f in unique_form_ids if f[0]])
     except Exception as e:
