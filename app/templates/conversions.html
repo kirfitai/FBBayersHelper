@@ -175,6 +175,9 @@ fetch('{{ request.host_url }}api/conversion/add', {
 let prefixChart = null;
 
 $(document).ready(function() {
+    // Инициализируем даты при загрузке
+    initializeDateFields();
+    
     // Загрузка начальных данных
     loadStats();
     
@@ -193,28 +196,11 @@ $(document).ready(function() {
                 $('#startDate').val(dates.startDate);
                 $('#endDate').val(dates.endDate);
                 
-                // Сохраняем значения в localStorage
-                localStorage.setItem('selectedDateRange', selectedRange);
-                localStorage.setItem('selectedStartDate', dates.startDate);
-                localStorage.setItem('selectedEndDate', dates.endDate);
+                // Автоматическая отправка формы при выборе периода
+                loadStats();
             }
         }
     });
-    
-    // Инициализация при загрузке страницы
-    if ($('#dateRange').val() !== 'custom') {
-        $('#customDateRange').hide();
-        
-        // Устанавливаем начальные даты при загрузке
-        const selectedRange = $('#dateRange').val();
-        if (selectedRange !== 'custom') {
-            const dates = calculateDateRange(selectedRange);
-            if (dates) {
-                $('#startDate').val(dates.startDate);
-                $('#endDate').val(dates.endDate);
-            }
-        }
-    }
     
     // Обработчик формы
     $('#statsForm').on('submit', function(e) {
@@ -222,6 +208,25 @@ $(document).ready(function() {
         loadStats();
     });
 });
+
+// Новая функция для инициализации полей дат
+function initializeDateFields() {
+    // Устанавливаем начальные даты при загрузке
+    const selectedRange = $('#dateRange').val();
+    
+    if (selectedRange && selectedRange !== 'custom') {
+        $('#customDateRange').hide();
+        
+        const dates = calculateDateRange(selectedRange);
+        if (dates) {
+            $('#startDate').val(dates.startDate);
+            $('#endDate').val(dates.endDate);
+            console.log('Dates initialized:', dates);
+        }
+    } else {
+        $('#customDateRange').show();
+    }
+}
 
 function calculateDateRange(rangeType) {
     const today = new Date();
