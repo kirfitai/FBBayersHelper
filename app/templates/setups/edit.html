@@ -30,14 +30,20 @@
                     
                     <div class="mb-3">
                         {{ form.check_interval.label(class="form-label") }}
-                        {{ form.check_interval(class="form-control") }}
-                        {% if form.check_interval.errors %}
-                        <div class="invalid-feedback d-block">
-                            {% for error in form.check_interval.errors %}
-                            <span>{{ error }}</span>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
+                        {{ form.check_interval(class="form-control", type="number", min="5") }}
+                        {% for error in form.check_interval.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                        <small class="text-muted">Как часто проверять кампанию на превышение порогов</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.check_period.label(class="form-label") }}
+                        {{ form.check_period(class="form-select") }}
+                        {% for error in form.check_period.errors %}
+                            <div class="invalid-feedback d-block">{{ error }}</div>
+                        {% endfor %}
+                        <small class="text-muted">За какой период сопоставлять конверсии с расходами в Facebook</small>
                     </div>
                 </div>
             </div>

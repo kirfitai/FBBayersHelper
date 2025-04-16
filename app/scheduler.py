@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta
+
 def check_campaign_thresholds(campaign_setup):
     """
     Проверяет достижение порогов для кампании и отключает ее при необходимости
@@ -29,9 +31,13 @@ def check_campaign_thresholds(campaign_setup):
             logger.info(f"Нет порогов в сетапе {setup.id}")
             return False
         
-        # Получаем статистику кампании
+        # Определяем период проверки для запроса статистики
+        check_period = setup.check_period or 'today'
+        date_range = calculate_date_range_for_period(check_period)
+        
+        # Получаем статистику кампании за указанный период
         campaign_id = campaign_setup.campaign_id
-        campaign_stats = fb_client.get_campaign_stats(campaign_id)
+        campaign_stats = fb_client.get_campaign_stats(campaign_id, date_range.get('start_date'), date_range.get('end_date'))
         
         if not campaign_stats:
             logger.warning(f"Не удалось получить статистику для кампании {campaign_id}")
@@ -54,7 +60,7 @@ def check_campaign_thresholds(campaign_setup):
             # Проверяем, превышает ли затраты порог для данного количества конверсий
             if float(spend) >= float(threshold_spend):
                 # Отключаем кампанию
-                logger.info(f"Отключаем кампанию {campaign_id} - затраты {spend}$ при {conversions} конверсиях. "
+                logger.info(f"Отключаем кампанию {campaign_id} - затраты {spend}$ при {conversions} конверсиях за период {check_period}. "
                            f"Порог: {threshold_spend}$ для {conversions} конверсий")
                 
                 result = fb_client.pause_campaign(campaign_id)
@@ -66,7 +72,7 @@ def check_campaign_thresholds(campaign_setup):
                     action = CampaignAction(
                         campaign_setup_id=campaign_setup.id,
                         action_type='pause',
-                        reason=f"Затраты {spend}$ при {conversions} конверсиях превысили порог {threshold_spend}$"
+                        reason=f"Затраты {spend}$ при {conversions} конверсиях за период {check_period} превысили порог {threshold_spend}$"
                     )
                     db.session.add(action)
                     db.session.commit()
@@ -76,7 +82,7 @@ def check_campaign_thresholds(campaign_setup):
                     logger.error(f"Не удалось отключить кампанию {campaign_id}")
             else:
                 logger.info(f"Кампания {campaign_id} не превысила порог затрат: "
-                           f"{spend}$ при {conversions} конверсиях. Порог: {threshold_spend}$")
+                           f"{spend}$ при {conversions} конверсиях за период {check_period}. Порог: {threshold_spend}$")
         else:
             logger.info(f"Не найден порог для {conversions} конверсий для кампании {campaign_id}")
         
@@ -88,4 +94,51 @@ def check_campaign_thresholds(campaign_setup):
         
     except Exception as e:
         logger.error(f"Ошибка при проверке порогов для кампании {campaign_setup.campaign_id}: {str(e)}")
-        return False 
+        return False
+
+def calculate_date_range_for_period(period):
+    """
+    Рассчитывает диапазон дат для заданного периода проверки
+    
+    Args:
+        period (str): Период проверки (today, last2days, last3days, last7days, alltime)
+        
+    Returns:
+        dict: Словарь с ключами start_date и end_date (форматы YYYY-MM-DD)
+    """
+    today = datetime.utcnow().date()
+    
+    if period == 'today':
+        return {
+            'start_date': today.strftime('%Y-%m-%d'),
+            'end_date': today.strftime('%Y-%m-%d')
+        }
+    elif period == 'last2days':
+        start_date = today - timedelta(days=1)
+        return {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': today.strftime('%Y-%m-%d')
+        }
+    elif period == 'last3days':
+        start_date = today - timedelta(days=2)
+        return {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': today.strftime('%Y-%m-%d')
+        }
+    elif period == 'last7days':
+        start_date = today - timedelta(days=6)
+        return {
+            'start_date': start_date.strftime('%Y-%m-%d'),
+            'end_date': today.strftime('%Y-%m-%d')
+        }
+    elif period == 'alltime':
+        return {
+            'start_date': None,  # API должен обрабатывать None как "все время"
+            'end_date': today.strftime('%Y-%m-%d')
+        }
+    else:
+        # Для неизвестного периода используем сегодняшний день
+        return {
+            'start_date': today.strftime('%Y-%m-%d'),
+            'end_date': today.strftime('%Y-%m-%d')
+        } 

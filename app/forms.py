@@ -23,6 +23,16 @@ class SetupForm(FlaskForm):
                                  validators=[DataRequired(), NumberRange(min=5)],
                                  default=30)
     
+    check_period = SelectField('Период проверки', 
+                              choices=[
+                                  ('today', 'Сегодня'),
+                                  ('last2days', 'Последние 2 дня (сегодня + вчера)'),
+                                  ('last3days', 'Последние 3 дня'),
+                                  ('last7days', 'Последние 7 дней'),
+                                  ('alltime', 'За все время')
+                              ],
+                              default='today')
+    
     # Динамический список порогов (макс. 15)
     thresholds = FieldList(
         FormField(ThresholdForm),

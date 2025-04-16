@@ -46,7 +46,8 @@ def create_setup():
         setup = Setup(
             name=form.name.data,
             user_id=current_user.id,
-            check_interval=form.check_interval.data
+            check_interval=form.check_interval.data,
+            check_period=form.check_period.data
         )
         db.session.add(setup)
         db.session.commit()
@@ -77,6 +78,7 @@ def edit_setup(id):
     if form.validate_on_submit():
         setup.name = form.name.data
         setup.check_interval = form.check_interval.data
+        setup.check_period = form.check_period.data
         
         # Удаление старых порогов
         for threshold in setup.thresholds:
@@ -101,6 +103,7 @@ def edit_setup(id):
     if request.method == 'GET':
         form.name.data = setup.name
         form.check_interval.data = setup.check_interval
+        form.check_period.data = setup.check_period
         
         # Загрузка порогов
         thresholds = setup.thresholds.order_by(ThresholdEntry.spend).all()
@@ -523,11 +526,12 @@ def get_conversion_stats():
             daily_stats = Conversion.get_daily_stats_by_ref_prefix(ref_prefix, start_date, end_date)
             
             result = {}
-            for date, form_id, count in daily_stats:
+            for date, form_id, ref, count in daily_stats:  # Обновляем распаковку, добавляя ref
                 date_str = date.strftime('%Y-%m-%d')
                 if date_str not in result:
                     result[date_str] = {}
-                result[date_str][form_id] = count
+                # Сохраняем count и ref в результате для каждого form_id
+                result[date_str][form_id] = {'count': count, 'ref': ref}
             
             return jsonify({
                 'ref_prefix': ref_prefix,

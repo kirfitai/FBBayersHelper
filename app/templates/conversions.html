@@ -455,14 +455,17 @@ function initializeWithJQuery() {
         const tbody = $('#statsData');
         tbody.empty();
         
-        // Предполагаем, что для каждой даты у нас есть полные данные включая ref
+        // Обрабатываем данные в новом формате
         dates.forEach(date => {
             const formIds = Object.keys(stats[date]);
             
             formIds.forEach(formId => {
-                const count = stats[date][formId];
-                // Извлекаем ref из имеющихся данных или подставляем префикс, если ref недоступен
-                const refValue = stats[date][formId].ref || $('#refPrefix').val() || '-';
+                // Теперь статистика - это объект с полями count и ref
+                const statInfo = stats[date][formId];
+                const count = typeof statInfo === 'object' ? statInfo.count : statInfo;
+                // Получаем полный ref из данных или используем префикс как запасной вариант
+                const refValue = (typeof statInfo === 'object' && statInfo.ref) ? statInfo.ref : $('#refPrefix').val() || '-';
+                
                 tbody.append(`
                     <tr>
                         <td>${date}</td>
@@ -494,7 +497,9 @@ function initializeWithJQuery() {
         
         formIdArray.forEach((formId, index) => {
             const dataPoints = dates.map(date => {
-                return stats[date][formId] || 0;
+                const statInfo = stats[date][formId];
+                // Обрабатываем как новый, так и старый формат данных
+                return statInfo ? (typeof statInfo === 'object' ? statInfo.count : statInfo) : 0;
             });
             
             chartData.datasets.push({

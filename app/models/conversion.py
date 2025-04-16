@@ -67,6 +67,7 @@ class Conversion(db.Model):
             query = db.session.query(
                 Conversion.date,
                 Conversion.form_id,
+                Conversion.ref,
                 func.count(Conversion.id).label('count')
             ).filter_by(ref_prefix=ref_prefix)
             
@@ -75,7 +76,7 @@ class Conversion(db.Model):
             if end_date:
                 query = query.filter(Conversion.date <= end_date)
             
-            return query.group_by(Conversion.date, Conversion.form_id).all()
+            return query.group_by(Conversion.date, Conversion.form_id, Conversion.ref).all()
         except Exception as e:
             # Логирование ошибки
             import logging
