@@ -172,386 +172,412 @@ fetch('{{ request.host_url }}api/conversion/add', {
 {% block scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
-let prefixChart = null;
+// Проверяем, загружен ли jQuery
+function ensureJQuery(callback) {
+    if (window.jQuery) {
+        console.log('jQuery уже загружен, выполняем код инициализации');
+        callback();
+    } else {
+        console.log('jQuery не загружен, добавляем скрипт');
+        // Если jQuery не загружен, загружаем его
+        var script = document.createElement('script');
+        script.src = 'https://code.jquery.com/jquery-3.6.0.min.js';
+        script.integrity = 'sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=';
+        script.crossOrigin = 'anonymous';
+        script.onload = function() {
+            console.log('jQuery загружен успешно, выполняем код инициализации');
+            callback();
+        };
+        document.head.appendChild(script);
+    }
+}
 
-$(document).ready(function() {
-    console.log('Conversions page loaded, initializing dates...');
-    
-    // Инициализируем даты при загрузке
-    initializeDateFields();
-    
-    // Загрузка начальных данных
-    loadStats();
-    
-    // Обработчик выбора периода
-    $('#dateRange').on('change', function() {
-        const selectedRange = $(this).val();
-        console.log('Date range changed to:', selectedRange);
+// Основной код, который будет выполнен после загрузки jQuery
+function initializeWithJQuery() {
+    let prefixChart = null;
+
+    $(document).ready(function() {
+        console.log('Conversions page loaded, initializing dates...');
         
-        if (selectedRange === 'custom') {
-            $('#customDateRange').show();
-        } else {
+        // Инициализируем даты при загрузке
+        initializeDateFields();
+        
+        // Загрузка начальных данных
+        loadStats();
+        
+        // Обработчик выбора периода
+        $('#dateRange').on('change', function() {
+            const selectedRange = $(this).val();
+            console.log('Date range changed to:', selectedRange);
+            
+            if (selectedRange === 'custom') {
+                $('#customDateRange').show();
+            } else {
+                $('#customDateRange').hide();
+                
+                // Устанавливаем даты в зависимости от выбранного периода
+                const dates = calculateDateRange(selectedRange);
+                console.log('Calculated dates:', dates);
+                
+                if (dates) {
+                    console.log('Setting dates to startDate:', dates.startDate, 'endDate:', dates.endDate);
+                    $('#startDate').val(dates.startDate);
+                    $('#endDate').val(dates.endDate);
+                    
+                    // Автоматическая отправка формы при выборе периода
+                    console.log('Auto-submitting form...');
+                    loadStats();
+                }
+            }
+        });
+        
+        // Обработчик формы
+        $('#statsForm').on('submit', function(e) {
+            e.preventDefault();
+            console.log('Form submitted, loading stats...');
+            loadStats();
+        });
+    });
+
+    // Функция для инициализации полей дат
+    function initializeDateFields() {
+        // Устанавливаем начальные даты при загрузке
+        const selectedRange = $('#dateRange').val();
+        console.log('Initializing date fields for range:', selectedRange);
+        
+        if (selectedRange && selectedRange !== 'custom') {
             $('#customDateRange').hide();
             
-            // Устанавливаем даты в зависимости от выбранного периода
             const dates = calculateDateRange(selectedRange);
-            console.log('Calculated dates:', dates);
+            console.log('Calculated initial dates:', dates);
             
             if (dates) {
-                console.log('Setting dates to startDate:', dates.startDate, 'endDate:', dates.endDate);
+                console.log('Setting initial dates - startDate:', dates.startDate, 'endDate:', dates.endDate);
                 $('#startDate').val(dates.startDate);
                 $('#endDate').val(dates.endDate);
+            }
+        } else {
+            $('#customDateRange').show();
+        }
+    }
+
+    function calculateDateRange(rangeType) {
+        console.log('Calculating date range for:', rangeType);
+        
+        const today = new Date();
+        console.log('Today is:', today);
+        
+        let startDate = new Date();
+        let endDate = new Date();
+        
+        switch(rangeType) {
+            case 'today':
+                // Старт и конец - сегодня
+                break;
                 
-                // Автоматическая отправка формы при выборе периода
-                console.log('Auto-submitting form...');
-                loadStats();
-            }
+            case 'yesterday':
+                // Вчерашний день
+                startDate.setDate(today.getDate() - 1);
+                endDate.setDate(today.getDate() - 1);
+                break;
+                
+            case 'last7days':
+                // Последние 7 дней
+                startDate.setDate(today.getDate() - 6);
+                break;
+                
+            case 'currentWeek':
+                // Текущая неделя (с понедельника)
+                const dayOfWeek = today.getDay() || 7; // если 0 (воскресенье), то берем 7
+                startDate.setDate(today.getDate() - dayOfWeek + 1);
+                break;
+                
+            case 'last30days':
+                // Последние 30 дней
+                startDate.setDate(today.getDate() - 29);
+                break;
+                
+            case 'prevMonth':
+                // Предыдущий месяц
+                startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+                break;
+                
+            case 'currentMonth':
+                // Текущий месяц
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                break;
+                
+            case 'currentYear':
+                // Текущий год
+                startDate = new Date(today.getFullYear(), 0, 1);
+                endDate = new Date(today.getFullYear(), 11, 31);
+                break;
+                
+            case 'prevYear':
+                // Прошлый год
+                startDate = new Date(today.getFullYear() - 1, 0, 1);
+                endDate = new Date(today.getFullYear() - 1, 11, 31);
+                break;
+                
+            default:
+                return null;
         }
-    });
-    
-    // Обработчик формы
-    $('#statsForm').on('submit', function(e) {
-        e.preventDefault();
-        console.log('Form submitted, loading stats...');
-        loadStats();
-    });
-});
+        
+        // Форматируем даты для input type="date": YYYY-MM-DD
+        const result = {
+            startDate: formatDateForInput(startDate),
+            endDate: formatDateForInput(endDate)
+        };
+        
+        console.log('Returning calculated dates:', result);
+        return result;
+    }
 
-// Новая функция для инициализации полей дат
-function initializeDateFields() {
-    // Устанавливаем начальные даты при загрузке
-    const selectedRange = $('#dateRange').val();
-    console.log('Initializing date fields for range:', selectedRange);
-    
-    if (selectedRange && selectedRange !== 'custom') {
-        $('#customDateRange').hide();
+    function formatDateForInput(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    }
+
+    function loadStats() {
+        const refPrefix = $('#refPrefix').val();
+        const startDate = $('#startDate').val();
+        const endDate = $('#endDate').val();
         
-        const dates = calculateDateRange(selectedRange);
-        console.log('Calculated initial dates:', dates);
+        // Сбросим текущее состояние
+        $('#loadingStats').removeClass('d-none');
+        $('#statsTable').addClass('d-none');
+        $('#noDataMessage').addClass('d-none');
         
-        if (dates) {
-            console.log('Setting initial dates - startDate:', dates.startDate, 'endDate:', dates.endDate);
-            $('#startDate').val(dates.startDate);
-            $('#endDate').val(dates.endDate);
+        // Формируем URL запроса
+        let url = '/api/conversions/stats?';
+        const params = [];
+        
+        if (refPrefix) {
+            params.push(`ref_prefix=${refPrefix}`);
         }
-    } else {
-        $('#customDateRange').show();
-    }
-}
-
-function calculateDateRange(rangeType) {
-    console.log('Calculating date range for:', rangeType);
-    
-    const today = new Date();
-    console.log('Today is:', today);
-    
-    let startDate = new Date();
-    let endDate = new Date();
-    
-    switch(rangeType) {
-        case 'today':
-            // Старт и конец - сегодня
-            break;
-            
-        case 'yesterday':
-            // Вчерашний день
-            startDate.setDate(today.getDate() - 1);
-            endDate.setDate(today.getDate() - 1);
-            break;
-            
-        case 'last7days':
-            // Последние 7 дней
-            startDate.setDate(today.getDate() - 6);
-            break;
-            
-        case 'currentWeek':
-            // Текущая неделя (с понедельника)
-            const dayOfWeek = today.getDay() || 7; // если 0 (воскресенье), то берем 7
-            startDate.setDate(today.getDate() - dayOfWeek + 1);
-            break;
-            
-        case 'last30days':
-            // Последние 30 дней
-            startDate.setDate(today.getDate() - 29);
-            break;
-            
-        case 'prevMonth':
-            // Предыдущий месяц
-            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-            break;
-            
-        case 'currentMonth':
-            // Текущий месяц
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-            endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-            break;
-            
-        case 'currentYear':
-            // Текущий год
-            startDate = new Date(today.getFullYear(), 0, 1);
-            endDate = new Date(today.getFullYear(), 11, 31);
-            break;
-            
-        case 'prevYear':
-            // Прошлый год
-            startDate = new Date(today.getFullYear() - 1, 0, 1);
-            endDate = new Date(today.getFullYear() - 1, 11, 31);
-            break;
-            
-        default:
-            return null;
-    }
-    
-    // Форматируем даты для input type="date": YYYY-MM-DD
-    const result = {
-        startDate: formatDateForInput(startDate),
-        endDate: formatDateForInput(endDate)
-    };
-    
-    console.log('Returning calculated dates:', result);
-    return result;
-}
-
-function formatDateForInput(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
-
-function loadStats() {
-    const refPrefix = $('#refPrefix').val();
-    const startDate = $('#startDate').val();
-    const endDate = $('#endDate').val();
-    
-    // Сбросим текущее состояние
-    $('#loadingStats').removeClass('d-none');
-    $('#statsTable').addClass('d-none');
-    $('#noDataMessage').addClass('d-none');
-    
-    // Формируем URL запроса
-    let url = '/api/conversions/stats?';
-    const params = [];
-    
-    if (refPrefix) {
-        params.push(`ref_prefix=${refPrefix}`);
-    }
-    
-    if (startDate) {
-        params.push(`start_date=${startDate}`);
-    }
-    
-    if (endDate) {
-        params.push(`end_date=${endDate}`);
-    }
-    
-    // Обновляем URL страницы с параметрами
-    const uiParams = params.join('&');
-    const newUrl = `${window.location.pathname}?${uiParams}`;
-    window.history.pushState({ path: newUrl }, '', newUrl);
-    
-    url += params.join('&');
-    
-    // Запрос данных
-    $.ajax({
-        url: url,
-        method: 'GET',
-        success: function(response) {
-            $('#loadingStats').addClass('d-none');
-            
-            // Проверяем на наличие ошибки в ответе
-            if (response.error) {
-                $('#noDataMessage').removeClass('d-none').text(response.error);
+        
+        if (startDate) {
+            params.push(`start_date=${startDate}`);
+        }
+        
+        if (endDate) {
+            params.push(`end_date=${endDate}`);
+        }
+        
+        // Обновляем URL страницы с параметрами
+        const uiParams = params.join('&');
+        const newUrl = `${window.location.pathname}?${uiParams}`;
+        window.history.pushState({ path: newUrl }, '', newUrl);
+        
+        url += params.join('&');
+        
+        // Запрос данных
+        $.ajax({
+            url: url,
+            method: 'GET',
+            success: function(response) {
+                $('#loadingStats').addClass('d-none');
+                
+                // Проверяем на наличие ошибки в ответе
+                if (response.error) {
+                    $('#noDataMessage').removeClass('d-none').text(response.error);
+                    if (prefixChart) {
+                        prefixChart.destroy();
+                        prefixChart = null;
+                    }
+                    return;
+                }
+                
+                // Проверка на полностью пустой ответ или пустую статистику
+                if (!response || !response.stats || Object.keys(response.stats).length === 0) {
+                    $('#noDataMessage').removeClass('d-none').text('Нет данных за выбранный период');
+                    if (prefixChart) {
+                        prefixChart.destroy();
+                        prefixChart = null;
+                    }
+                    return;
+                }
+                
+                if (refPrefix) {
+                    // Данные для конкретного префикса по дням
+                    displayPrefixStats(response);
+                } else {
+                    // Общая статистика по префиксам
+                    displayGeneralStats(response);
+                }
+            },
+            error: function(xhr) {
+                $('#loadingStats').addClass('d-none');
+                $('#noDataMessage').removeClass('d-none').text('Ошибка при загрузке данных');
+                console.error('Ошибка:', xhr.responseText);
+                
+                // Уничтожаем график если он был
                 if (prefixChart) {
                     prefixChart.destroy();
                     prefixChart = null;
                 }
-                return;
             }
-            
-            // Проверка на полностью пустой ответ или пустую статистику
-            if (!response || !response.stats || Object.keys(response.stats).length === 0) {
-                $('#noDataMessage').removeClass('d-none').text('Нет данных за выбранный период');
-                if (prefixChart) {
-                    prefixChart.destroy();
-                    prefixChart = null;
-                }
-                return;
-            }
-            
-            if (refPrefix) {
-                // Данные для конкретного префикса по дням
-                displayPrefixStats(response);
-            } else {
-                // Общая статистика по префиксам
-                displayGeneralStats(response);
-            }
-        },
-        error: function(xhr) {
-            $('#loadingStats').addClass('d-none');
-            $('#noDataMessage').removeClass('d-none').text('Ошибка при загрузке данных');
-            console.error('Ошибка:', xhr.responseText);
-            
-            // Уничтожаем график если он был
-            if (prefixChart) {
-                prefixChart.destroy();
-                prefixChart = null;
-            }
-        }
-    });
-}
-
-function displayPrefixStats(response) {
-    const stats = response.stats;
-    const dates = Object.keys(stats).sort();
-    
-    if (dates.length === 0) {
-        $('#noDataMessage').removeClass('d-none');
-        return;
+        });
     }
-    
-    $('#statsTable').removeClass('d-none');
-    
-    // Заполняем таблицу
-    const tbody = $('#statsData');
-    tbody.empty();
-    
-    dates.forEach(date => {
-        const formIds = Object.keys(stats[date]);
+
+    function displayPrefixStats(response) {
+        const stats = response.stats;
+        const dates = Object.keys(stats).sort();
         
-        formIds.forEach(formId => {
-            const count = stats[date][formId];
+        if (dates.length === 0) {
+            $('#noDataMessage').removeClass('d-none');
+            return;
+        }
+        
+        $('#statsTable').removeClass('d-none');
+        
+        // Заполняем таблицу
+        const tbody = $('#statsData');
+        tbody.empty();
+        
+        dates.forEach(date => {
+            const formIds = Object.keys(stats[date]);
+            
+            formIds.forEach(formId => {
+                const count = stats[date][formId];
+                tbody.append(`
+                    <tr>
+                        <td>${date}</td>
+                        <td>${formId}</td>
+                        <td>${count}</td>
+                    </tr>
+                `);
+            });
+        });
+        
+        // Создаем график по дням для выбранного префикса
+        const chartData = {
+            labels: dates,
+            datasets: []
+        };
+        
+        // Собираем все уникальные formId из всех дат
+        const allFormIds = new Set();
+        dates.forEach(date => {
+            Object.keys(stats[date]).forEach(formId => {
+                allFormIds.add(formId);
+            });
+        });
+        
+        // Создаем наборы данных для каждого formId
+        const formIdArray = Array.from(allFormIds);
+        const colors = generateColors(formIdArray.length);
+        
+        formIdArray.forEach((formId, index) => {
+            const dataPoints = dates.map(date => {
+                return stats[date][formId] || 0;
+            });
+            
+            chartData.datasets.push({
+                label: `Форма ${formId}`,
+                data: dataPoints,
+                backgroundColor: colors[index],
+                borderColor: colors[index],
+                borderWidth: 1
+            });
+        });
+        
+        updateChart(chartData, 'Количество конверсий по дням');
+    }
+
+    function displayGeneralStats(response) {
+        const stats = response.stats;
+        const prefixes = Object.keys(stats);
+        
+        if (prefixes.length === 0) {
+            $('#noDataMessage').removeClass('d-none');
+            return;
+        }
+        
+        $('#statsTable').removeClass('d-none');
+        
+        // Заполняем таблицу
+        const tbody = $('#statsData');
+        tbody.empty();
+        
+        prefixes.forEach(prefix => {
+            const count = stats[prefix];
             tbody.append(`
                 <tr>
-                    <td>${date}</td>
-                    <td>${formId}</td>
+                    <td colspan="2">${prefix}</td>
                     <td>${count}</td>
                 </tr>
             `);
         });
-    });
-    
-    // Создаем график по дням для выбранного префикса
-    const chartData = {
-        labels: dates,
-        datasets: []
-    };
-    
-    // Собираем все уникальные formId из всех дат
-    const allFormIds = new Set();
-    dates.forEach(date => {
-        Object.keys(stats[date]).forEach(formId => {
-            allFormIds.add(formId);
-        });
-    });
-    
-    // Создаем наборы данных для каждого formId
-    const formIdArray = Array.from(allFormIds);
-    const colors = generateColors(formIdArray.length);
-    
-    formIdArray.forEach((formId, index) => {
-        const dataPoints = dates.map(date => {
-            return stats[date][formId] || 0;
-        });
         
-        chartData.datasets.push({
-            label: `Форма ${formId}`,
-            data: dataPoints,
-            backgroundColor: colors[index],
-            borderColor: colors[index],
-            borderWidth: 1
-        });
-    });
-    
-    updateChart(chartData, 'Количество конверсий по дням');
-}
-
-function displayGeneralStats(response) {
-    const stats = response.stats;
-    const prefixes = Object.keys(stats);
-    
-    if (prefixes.length === 0) {
-        $('#noDataMessage').removeClass('d-none');
-        return;
+        // Создаем диаграмму распределения по префиксам
+        const colors = generateColors(prefixes.length);
+        
+        const chartData = {
+            labels: prefixes,
+            datasets: [{
+                label: 'Количество конверсий',
+                data: prefixes.map(prefix => stats[prefix]),
+                backgroundColor: colors,
+                borderColor: colors,
+                borderWidth: 1
+            }]
+        };
+        
+        updateChart(chartData, 'Распределение конверсий по префиксам');
     }
-    
-    $('#statsTable').removeClass('d-none');
-    
-    // Заполняем таблицу
-    const tbody = $('#statsData');
-    tbody.empty();
-    
-    prefixes.forEach(prefix => {
-        const count = stats[prefix];
-        tbody.append(`
-            <tr>
-                <td colspan="2">${prefix}</td>
-                <td>${count}</td>
-            </tr>
-        `);
-    });
-    
-    // Создаем диаграмму распределения по префиксам
-    const colors = generateColors(prefixes.length);
-    
-    const chartData = {
-        labels: prefixes,
-        datasets: [{
-            label: 'Количество конверсий',
-            data: prefixes.map(prefix => stats[prefix]),
-            backgroundColor: colors,
-            borderColor: colors,
-            borderWidth: 1
-        }]
-    };
-    
-    updateChart(chartData, 'Распределение конверсий по префиксам');
-}
 
-function updateChart(data, title) {
-    const ctx = document.getElementById('prefixChart').getContext('2d');
-    
-    if (prefixChart) {
-        prefixChart.destroy();
-    }
-    
-    prefixChart = new Chart(ctx, {
-        type: 'bar',
-        data: data,
-        options: {
-            responsive: true,
-            plugins: {
-                title: {
-                    display: true,
-                    text: title
+    function updateChart(data, title) {
+        const ctx = document.getElementById('prefixChart').getContext('2d');
+        
+        if (prefixChart) {
+            prefixChart.destroy();
+        }
+        
+        prefixChart = new Chart(ctx, {
+            type: 'bar',
+            data: data,
+            options: {
+                responsive: true,
+                plugins: {
+                    title: {
+                        display: true,
+                        text: title
+                    },
+                    legend: {
+                        position: 'top',
+                    }
                 },
-                legend: {
-                    position: 'top',
-                }
-            },
-            scales: {
-                y: {
-                    beginAtZero: true
+                scales: {
+                    y: {
+                        beginAtZero: true
+                    }
                 }
             }
+        });
+    }
+
+    function generateColors(count) {
+        const baseColors = [
+            '#4285F4', '#EA4335', '#FBBC05', '#34A853', 
+            '#FF6D01', '#46BDC6', '#7B1FA2', '#C2185B',
+            '#0097A7', '#00BFA5', '#673AB7', '#3949AB'
+        ];
+        
+        const colors = [];
+        for (let i = 0; i < count; i++) {
+            colors.push(baseColors[i % baseColors.length]);
         }
-    });
+        
+        return colors;
+    }
 }
 
-function generateColors(count) {
-    const baseColors = [
-        '#4285F4', '#EA4335', '#FBBC05', '#34A853', 
-        '#FF6D01', '#46BDC6', '#7B1FA2', '#C2185B',
-        '#0097A7', '#00BFA5', '#673AB7', '#3949AB'
-    ];
-    
-    const colors = [];
-    for (let i = 0; i < count; i++) {
-        colors.push(baseColors[i % baseColors.length]);
-    }
-    
-    return colors;
-}
+// Запускаем инициализацию
+ensureJQuery(initializeWithJQuery);
 </script>
 {% endblock %} 

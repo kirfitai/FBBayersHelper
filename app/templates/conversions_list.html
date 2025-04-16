@@ -231,139 +231,165 @@
 
 {% block scripts %}
 <script>
-$(document).ready(function() {
-    console.log('Page loaded, initializing dates...');
-    
-    // Инициализируем даты при загрузке страницы
-    initializeDateFields();
-    
-    // Всегда показываем поля дат
-    $('#startDateContainer, #endDateContainer').show();
-    
-    // Обработчик выбора периода
-    $('#dateRange').on('change', function() {
-        const selectedRange = $(this).val();
-        console.log('Date range changed to:', selectedRange);
+// Проверяем, загружен ли jQuery
+function ensureJQuery(callback) {
+    if (window.jQuery) {
+        console.log('jQuery уже загружен, выполняем код инициализации');
+        callback();
+    } else {
+        console.log('jQuery не загружен, добавляем скрипт');
+        // Если jQuery не загружен, загружаем его
+        var script = document.createElement('script');
+        script.src = 'https://code.jquery.com/jquery-3.6.0.min.js';
+        script.integrity = 'sha256-/xUj+3OJU5yExlq6GSYGSHk7tPXikynS7ogEvDej/m4=';
+        script.crossOrigin = 'anonymous';
+        script.onload = function() {
+            console.log('jQuery загружен успешно, выполняем код инициализации');
+            callback();
+        };
+        document.head.appendChild(script);
+    }
+}
+
+// Основной код, который будет выполнен после загрузки jQuery
+function initializeWithJQuery() {
+    $(document).ready(function() {
+        console.log('Page loaded, initializing dates...');
         
-        if (selectedRange !== 'custom') {
-            // Устанавливаем даты в зависимости от выбранного периода
+        // Инициализируем даты при загрузке страницы
+        initializeDateFields();
+        
+        // Всегда показываем поля дат
+        $('#startDateContainer, #endDateContainer').show();
+        
+        // Обработчик выбора периода
+        $('#dateRange').on('change', function() {
+            const selectedRange = $(this).val();
+            console.log('Date range changed to:', selectedRange);
+            
+            if (selectedRange !== 'custom') {
+                // Устанавливаем даты в зависимости от выбранного периода
+                const dates = calculateDateRange(selectedRange);
+                console.log('Calculated dates:', dates);
+                
+                if (dates) {
+                    $('#start_date').val(dates.startDate);
+                    $('#end_date').val(dates.endDate);
+                    console.log('Set dates - start:', dates.startDate, 'end:', dates.endDate);
+                    
+                    // Автоматически отправляем форму после выбора предустановленного периода
+                    $('form').submit();
+                }
+            } else {
+                console.log('Custom range selected, not setting dates automatically');
+            }
+        });
+        
+        // Обработчик клика по ссылке "Сбросить"
+        $('a[href="{{ url_for("main.conversions_list") }}"]').on('click', function() {
+            console.log('Reset clicked');
+        });
+    });
+
+    // Функция для инициализации полей дат
+    function initializeDateFields() {
+        const selectedRange = $('#dateRange').val();
+        console.log('Initializing dates for range:', selectedRange);
+        
+        // Если выбран предустановленный период, устанавливаем соответствующие даты
+        if (selectedRange && selectedRange !== 'custom') {
             const dates = calculateDateRange(selectedRange);
-            console.log('Calculated dates:', dates);
+            console.log('Calculated initial dates:', dates);
             
             if (dates) {
                 $('#start_date').val(dates.startDate);
                 $('#end_date').val(dates.endDate);
-                console.log('Set dates - start:', dates.startDate, 'end:', dates.endDate);
-                
-                // Автоматически отправляем форму после выбора предустановленного периода
-                $('form').submit();
+                console.log('Set initial dates - start:', dates.startDate, 'end:', dates.endDate);
             }
-        } else {
-            console.log('Custom range selected, not setting dates automatically');
         }
-    });
-    
-    // Обработчик клика по ссылке "Сбросить"
-    $('a[href="{{ url_for("main.conversions_list") }}"]').on('click', function() {
-        console.log('Reset clicked');
-    });
-});
+    }
 
-// Функция для инициализации полей дат
-function initializeDateFields() {
-    const selectedRange = $('#dateRange').val();
-    console.log('Initializing dates for range:', selectedRange);
-    
-    // Если выбран предустановленный период, устанавливаем соответствующие даты
-    if (selectedRange && selectedRange !== 'custom') {
-        const dates = calculateDateRange(selectedRange);
-        console.log('Calculated initial dates:', dates);
+    function calculateDateRange(rangeType) {
+        console.log('Calculating dates for range type:', rangeType);
         
-        if (dates) {
-            $('#start_date').val(dates.startDate);
-            $('#end_date').val(dates.endDate);
-            console.log('Set initial dates - start:', dates.startDate, 'end:', dates.endDate);
+        const today = new Date();
+        let startDate = new Date();
+        let endDate = new Date();
+        
+        switch(rangeType) {
+            case 'today':
+                // Старт и конец - сегодня
+                break;
+                
+            case 'yesterday':
+                // Вчерашний день
+                startDate.setDate(today.getDate() - 1);
+                endDate.setDate(today.getDate() - 1);
+                break;
+                
+            case 'last7days':
+                // Последние 7 дней
+                startDate.setDate(today.getDate() - 6);
+                break;
+                
+            case 'currentWeek':
+                // Текущая неделя (с понедельника)
+                const dayOfWeek = today.getDay() || 7; // если 0 (воскресенье), то берем 7
+                startDate.setDate(today.getDate() - dayOfWeek + 1);
+                break;
+                
+            case 'last30days':
+                // Последние 30 дней
+                startDate.setDate(today.getDate() - 29);
+                break;
+                
+            case 'prevMonth':
+                // Предыдущий месяц
+                startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+                break;
+                
+            case 'currentMonth':
+                // Текущий месяц
+                startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+                endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                break;
+                
+            case 'currentYear':
+                // Текущий год
+                startDate = new Date(today.getFullYear(), 0, 1);
+                endDate = new Date(today.getFullYear(), 11, 31);
+                break;
+                
+            case 'prevYear':
+                // Прошлый год
+                startDate = new Date(today.getFullYear() - 1, 0, 1);
+                endDate = new Date(today.getFullYear() - 1, 11, 31);
+                break;
+                
+            default:
+                return null;
         }
+        
+        // Форматируем даты для input type="date": YYYY-MM-DD
+        const result = {
+            startDate: formatDateForInput(startDate),
+            endDate: formatDateForInput(endDate)
+        };
+        
+        console.log('Calculated result:', result);
+        return result;
+    }
+
+    function formatDateForInput(date) {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
     }
 }
 
-function calculateDateRange(rangeType) {
-    console.log('Calculating dates for range type:', rangeType);
-    
-    const today = new Date();
-    let startDate = new Date();
-    let endDate = new Date();
-    
-    switch(rangeType) {
-        case 'today':
-            // Старт и конец - сегодня
-            break;
-            
-        case 'yesterday':
-            // Вчерашний день
-            startDate.setDate(today.getDate() - 1);
-            endDate.setDate(today.getDate() - 1);
-            break;
-            
-        case 'last7days':
-            // Последние 7 дней
-            startDate.setDate(today.getDate() - 6);
-            break;
-            
-        case 'currentWeek':
-            // Текущая неделя (с понедельника)
-            const dayOfWeek = today.getDay() || 7; // если 0 (воскресенье), то берем 7
-            startDate.setDate(today.getDate() - dayOfWeek + 1);
-            break;
-            
-        case 'last30days':
-            // Последние 30 дней
-            startDate.setDate(today.getDate() - 29);
-            break;
-            
-        case 'prevMonth':
-            // Предыдущий месяц
-            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-            break;
-            
-        case 'currentMonth':
-            // Текущий месяц
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-            endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-            break;
-            
-        case 'currentYear':
-            // Текущий год
-            startDate = new Date(today.getFullYear(), 0, 1);
-            endDate = new Date(today.getFullYear(), 11, 31);
-            break;
-            
-        case 'prevYear':
-            // Прошлый год
-            startDate = new Date(today.getFullYear() - 1, 0, 1);
-            endDate = new Date(today.getFullYear() - 1, 11, 31);
-            break;
-            
-        default:
-            return null;
-    }
-    
-    // Форматируем даты для input type="date": YYYY-MM-DD
-    const result = {
-        startDate: formatDateForInput(startDate),
-        endDate: formatDateForInput(endDate)
-    };
-    
-    console.log('Calculated result:', result);
-    return result;
-}
-
-function formatDateForInput(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-}
+// Запускаем инициализацию
+ensureJQuery(initializeWithJQuery);
 </script>
 {% endblock %} 
