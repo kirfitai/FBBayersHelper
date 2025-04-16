@@ -192,20 +192,35 @@ $(document).ready(function() {
             if (dates) {
                 $('#startDate').val(dates.startDate);
                 $('#endDate').val(dates.endDate);
+                
+                // Сохраняем значения в localStorage
+                localStorage.setItem('selectedDateRange', selectedRange);
+                localStorage.setItem('selectedStartDate', dates.startDate);
+                localStorage.setItem('selectedEndDate', dates.endDate);
             }
         }
     });
+    
+    // Инициализация при загрузке страницы
+    if ($('#dateRange').val() !== 'custom') {
+        $('#customDateRange').hide();
+        
+        // Устанавливаем начальные даты при загрузке
+        const selectedRange = $('#dateRange').val();
+        if (selectedRange !== 'custom') {
+            const dates = calculateDateRange(selectedRange);
+            if (dates) {
+                $('#startDate').val(dates.startDate);
+                $('#endDate').val(dates.endDate);
+            }
+        }
+    }
     
     // Обработчик формы
     $('#statsForm').on('submit', function(e) {
         e.preventDefault();
         loadStats();
     });
-    
-    // Инициализация - скрываем дополнительные поля дат если выбран предопределенный период
-    if ($('#dateRange').val() !== 'custom') {
-        $('#customDateRange').hide();
-    }
 });
 
 function calculateDateRange(rangeType) {

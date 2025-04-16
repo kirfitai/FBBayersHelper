@@ -268,36 +268,16 @@ $(document).ready(function() {
     
     // Инициализация при загрузке страницы
     const initialDateRange = $('#dateRange').val();
-    const savedDateRange = localStorage.getItem('selectedDateRange');
-    const savedStartDate = localStorage.getItem('selectedStartDate');
-    const savedEndDate = localStorage.getItem('selectedEndDate');
     
-    // Если есть сохраненные значения и нет параметров в URL
-    if (!initialDateRange && savedDateRange) {
-        $('#dateRange').val(savedDateRange);
-    }
-    
-    // Устанавливаем даты из сохраненных значений, если нет значений в полях
-    if (!$('#start_date').val() && savedStartDate) {
-        $('#start_date').val(savedStartDate);
-    }
-    
-    if (!$('#end_date').val() && savedEndDate) {
-        $('#end_date').val(savedEndDate);
-    }
-    
-    // Если выбран предустановленный период, но нет дат в полях,
-    // устанавливаем даты согласно выбранному периоду
-    if (initialDateRange && initialDateRange !== 'custom' && (!$('#start_date').val() || !$('#end_date').val())) {
+    // Если выбран предустановленный период, устанавливаем соответствующие даты
+    if (initialDateRange && initialDateRange !== 'custom') {
         const dates = calculateDateRange(initialDateRange);
         if (dates) {
-            $('#start_date').val(dates.startDate);
-            $('#end_date').val(dates.endDate);
-            
-            // Сохраняем значения
-            localStorage.setItem('selectedDateRange', initialDateRange);
-            localStorage.setItem('selectedStartDate', dates.startDate);
-            localStorage.setItem('selectedEndDate', dates.endDate);
+            // Только если поля даты пустые или не соответствуют выбранному периоду
+            if (!$('#start_date').val() || !$('#end_date').val()) {
+                $('#start_date').val(dates.startDate);
+                $('#end_date').val(dates.endDate);
+            }
         }
     }
     
