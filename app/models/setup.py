@@ -20,7 +20,7 @@ class Setup(db.Model):
     name = db.Column(db.String(100), nullable=False)
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'))
     check_interval = db.Column(db.Integer, default=30)  # в минутах
-    check_period = db.Column(db.String(20), default='today')  # период проверки (today, last2days, last3days, last7days, alltime)
+    check_period = db.Column(db.String(20), nullable=True, default='today')  # период проверки (today, last2days, last3days, last7days, alltime)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
@@ -53,7 +53,7 @@ class Setup(db.Model):
             'id': self.id,
             'name': self.name,
             'check_interval': self.check_interval,
-            'check_period': self.check_period,
+            'check_period': self.check_period or 'today',  # Если None, вернуть 'today'
             'is_active': self.is_active,
             'thresholds': self.get_thresholds_as_list()
         }
