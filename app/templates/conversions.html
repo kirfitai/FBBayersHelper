@@ -17,60 +17,75 @@
         </div>
     </div>
     
-    <div class="row">
-        <div class="col-md-4">
-            <div class="card mb-4">
+    <div class="row mb-4">
+        <div class="col-md-12">
+            <div class="card">
                 <div class="card-header">
                     <h5>Фильтры</h5>
                 </div>
                 <div class="card-body">
                     <form id="statsForm">
-                        <div class="mb-3">
-                            <label for="refPrefix" class="form-label">Префикс REF</label>
-                            <select class="form-select" id="refPrefix" name="refPrefix">
-                                <option value="">Все префиксы</option>
-                                {% for prefix in ref_prefixes %}
-                                <option value="{{ prefix }}">{{ prefix }}</option>
-                                {% endfor %}
-                            </select>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label for="dateRange" class="form-label">Период</label>
-                            <select class="form-select" id="dateRange" name="dateRange">
-                                <option value="custom">Произвольный период</option>
-                                <option value="today">Сегодня</option>
-                                <option value="yesterday">Вчера</option>
-                                <option value="last7days">Последние 7 дней</option>
-                                <option value="currentWeek">Текущая неделя</option>
-                                <option value="last30days">Последние 30 дней</option>
-                                <option value="prevMonth">Предыдущий месяц</option>
-                                <option value="currentMonth">Текущий месяц</option>
-                                <option value="currentYear">Текущий год</option>
-                                <option value="prevYear">Прошлый год</option>
-                            </select>
-                        </div>
-                        
-                        <div id="customDateRange">
-                            <div class="mb-3">
-                                <label for="startDate" class="form-label">Дата начала</label>
-                                <input type="date" class="form-control" id="startDate" name="startDate">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="refPrefix" class="form-label">Префикс REF</label>
+                                    <select class="form-select" id="refPrefix" name="refPrefix">
+                                        <option value="">Все префиксы</option>
+                                        {% for prefix in ref_prefixes %}
+                                        <option value="{{ prefix }}">{{ prefix }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
                             </div>
-                            <div class="mb-3">
-                                <label for="endDate" class="form-label">Дата окончания</label>
-                                <input type="date" class="form-control" id="endDate" name="endDate">
+                            
+                            <div class="col-md-4">
+                                <div class="mb-3">
+                                    <label for="dateRange" class="form-label">Период</label>
+                                    <select class="form-select" id="dateRange" name="dateRange">
+                                        <option value="custom">Произвольный период</option>
+                                        <option value="today">Сегодня</option>
+                                        <option value="yesterday">Вчера</option>
+                                        <option value="last7days">Последние 7 дней</option>
+                                        <option value="currentWeek">Текущая неделя</option>
+                                        <option value="last30days">Последние 30 дней</option>
+                                        <option value="prevMonth">Предыдущий месяц</option>
+                                        <option value="currentMonth">Текущий месяц</option>
+                                        <option value="currentYear">Текущий год</option>
+                                        <option value="prevYear">Прошлый год</option>
+                                    </select>
+                                </div>
                             </div>
                         </div>
                         
-                        <div class="d-grid">
-                            <button type="submit" class="btn btn-primary">Применить</button>
+                        <div class="row g-3" id="customDateRange">
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="startDate" class="form-label">С даты</label>
+                                    <input type="date" class="form-control" id="startDate" name="startDate">
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="mb-3">
+                                    <label for="endDate" class="form-label">По дату</label>
+                                    <input type="date" class="form-control" id="endDate" name="endDate">
+                                </div>
+                            </div>
+                            <div class="col-md-6">
+                                <div class="mb-3 d-flex align-items-end h-100">
+                                    <button type="submit" class="btn btn-primary">
+                                        <i class="fas fa-search"></i> Применить фильтры
+                                    </button>
+                                </div>
+                            </div>
                         </div>
                     </form>
                 </div>
             </div>
         </div>
-        
-        <div class="col-md-8">
+    </div>
+    
+    <div class="row">
+        <div class="col-md-12">
             <div class="card">
                 <div class="card-header">
                     <h5>Статистика конверсий</h5>
@@ -94,7 +109,8 @@
                                     <thead class="table-light">
                                         <tr>
                                             <th>Дата</th>
-                                            <th>Форма ID</th>
+                                            <th>Ref</th>
+                                            <th>FormID</th>
                                             <th>Количество</th>
                                         </tr>
                                     </thead>
@@ -439,14 +455,18 @@ function initializeWithJQuery() {
         const tbody = $('#statsData');
         tbody.empty();
         
+        // Предполагаем, что для каждой даты у нас есть полные данные включая ref
         dates.forEach(date => {
             const formIds = Object.keys(stats[date]);
             
             formIds.forEach(formId => {
                 const count = stats[date][formId];
+                // Извлекаем ref из имеющихся данных или подставляем префикс, если ref недоступен
+                const refValue = stats[date][formId].ref || $('#refPrefix').val() || '-';
                 tbody.append(`
                     <tr>
                         <td>${date}</td>
+                        <td>${refValue}</td>
                         <td>${formId}</td>
                         <td>${count}</td>
                     </tr>
@@ -478,7 +498,7 @@ function initializeWithJQuery() {
             });
             
             chartData.datasets.push({
-                label: `Форма ${formId}`,
+                label: `FormID ${formId}`,
                 data: dataPoints,
                 backgroundColor: colors[index],
                 borderColor: colors[index],
@@ -508,7 +528,9 @@ function initializeWithJQuery() {
             const count = stats[prefix];
             tbody.append(`
                 <tr>
-                    <td colspan="2">${prefix}</td>
+                    <td>-</td>
+                    <td>${prefix}</td>
+                    <td>-</td>
                     <td>${count}</td>
                 </tr>
             `);
