@@ -191,13 +191,18 @@
                             </li>
                             {% endif %}
                             
-                            {% for page_num in range(max(1, conversions.page - 2), min(conversions.pages or 1, conversions.page + 3)) %}
+                            {# Используем встроенные функции Jinja для избежания ошибки 'max' is undefined #}
+                            {% with start = [1, conversions.page - 2]|max %}
+                            {% with end = [conversions.pages or 1, conversions.page + 3]|min %}
+                            {% for page_num in range(start, end) %}
                             <li class="page-item {% if page_num == conversions.page %}active{% endif %}">
                                 <a class="page-link" href="{{ url_for('main.conversions_list', page=page_num, per_page=conversions.per_page, ref=ref, ref_prefix=ref_prefix, form_id=form_id, quid=quid, start_date=start_date, end_date=end_date) }}">
                                     {{ page_num }}
                                 </a>
                             </li>
                             {% endfor %}
+                            {% endwith %}
+                            {% endwith %}
                             
                             {% if conversions.has_next %}
                             <li class="page-item">
