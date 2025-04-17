@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Профиль пользователя{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-12">
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h3 class="mb-0">Профиль пользователя</h3>
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h4>Основная информация</h4>
+                            <table class="table">
+                                <tr>
+                                    <th>Имя пользователя:</th>
+                                    <td>{{ current_user.username }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Email:</th>
+                                    <td>{{ current_user.email }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Зарегистрирован:</th>
+                                    <td>{{ current_user.created_at.strftime('%d.%m.%Y') }}</td>
+                                </tr>
+                                <tr>
+                                    <th>Роль:</th>
+                                    <td>{% if current_user.is_admin %}Администратор{% else %}Пользователь{% endif %}</td>
+                                </tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h4>Безопасность</h4>
+                            <div class="card">
+                                <div class="card-header">
+                                    <h5>Двухфакторная аутентификация</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p class="card-text">
+                                        Статус: 
+                                        {% if current_user.is_2fa_enabled %}
+                                            <span class="badge bg-success">Включена</span>
+                                        {% else %}
+                                            <span class="badge bg-warning">Отключена</span>
+                                        {% endif %}
+                                    </p>
+                                    
+                                    {% if current_user.is_2fa_enabled %}
+                                        <p>Двухфакторная аутентификация активирована для вашей учетной записи.</p>
+                                        <form method="POST" action="{{ url_for('auth.disable_2fa') }}">
+                                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите отключить двухфакторную аутентификацию? Это снизит безопасность вашей учетной записи.')">
+                                                Отключить 2FA
+                                            </button>
+                                        </form>
+                                    {% else %}
+                                        <p>Повысьте безопасность вашей учетной записи, активировав двухфакторную аутентификацию.</p>
+                                        <a href="{{ url_for('auth.setup_2fa') }}" class="btn btn-primary">
+                                            Настроить 2FA
+                                        </a>
+                                    {% endif %}
+                                </div>
+                            </div>
+                            
+                            <div class="card mt-3">
+                                <div class="card-header">
+                                    <h5>Сменить пароль</h5>
+                                </div>
+                                <div class="card-body">
+                                    <p>Рекомендуется периодически менять пароль для повышения безопасности.</p>
+                                    <a href="#" class="btn btn-secondary">Сменить пароль</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

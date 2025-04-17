@@ -21,15 +21,21 @@ class User(UserMixin, db.Model):
     active_token_id = db.Column(db.Integer)  # ID активного токена
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
+    # Новые поля
+    is_admin = db.Column(db.Boolean, default=False)  # Роль администратора
+    totp_secret = db.Column(db.String(32))  # Секретный ключ для TOTP (Google Authenticator)
+    is_2fa_enabled = db.Column(db.Boolean, default=False)  # Включена ли 2FA
+    
     # Отношения
     setups = db.relationship('Setup', backref='owner', lazy='dynamic')
     campaign_setups = db.relationship('CampaignSetup', backref='owner', lazy='dynamic')
     facebook_tokens = db.relationship('FacebookToken', backref='owner', lazy='dynamic')
 
-    def __init__(self, username, email, password):
+    def __init__(self, username, email, password, is_admin=False):
         self.username = username
         self.email = email
         self.set_password(password)
+        self.is_admin = is_admin
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -42,6 +48,14 @@ class User(UserMixin, db.Model):
         self.fb_app_id = app_id
         self.fb_app_secret = app_secret
         self.fb_account_id = account_id
+        
+    def set_totp_secret(self, secret):
+        """Установить секретный ключ для TOTP"""
+        self.totp_secret = secret
+        
+    def enable_2fa(self, enable=True):
+        """Включить или выключить 2FA"""
+        self.is_2fa_enabled = enable
 
     def __repr__(self):
         return f'<User {self.username}>'

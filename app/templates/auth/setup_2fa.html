@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}Настройка двухфакторной аутентификации{% endblock %}
+
+{% block content %}
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header">
+                    <h3 class="mb-0">Настройка двухфакторной аутентификации</h3>
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-info">
+                        <p>Двухфакторная аутентификация повышает безопасность вашей учетной записи. После настройки при входе в систему вам потребуется вводить не только пароль, но и одноразовый код из приложения-аутентификатора.</p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6 text-center">
+                            <h4>1. Отсканируйте QR-код</h4>
+                            <p>Используйте Google Authenticator или другое TOTP-совместимое приложение.</p>
+                            <div class="qr-code-container mb-3">
+                                <img src="data:image/png;base64,{{ qr_code }}" alt="QR код для 2FA" class="img-thumbnail">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <h4>2. Или введите код вручную</h4>
+                            <p>Если у вас возникли проблемы со сканированием QR-кода, введите этот ключ вручную:</p>
+                            <div class="input-group mb-3">
+                                <input type="text" class="form-control" value="{{ secret }}" readonly>
+                                <button class="btn btn-outline-secondary" type="button" onclick="copyToClipboard('{{ secret }}')">
+                                    Копировать
+                                </button>
+                            </div>
+                            <p class="small text-muted">При настройке используйте "Ввести ключ вручную" в вашем приложении.</p>
+                        </div>
+                    </div>
+                    
+                    <hr>
+                    
+                    <div class="row mt-4">
+                        <div class="col-md-12">
+                            <h4>3. Подтвердите настройку</h4>
+                            <p>Введите код из приложения для подтверждения настройки:</p>
+                            
+                            {% with messages = get_flashed_messages() %}
+                            {% if messages %}
+                            <div class="alert alert-danger">
+                                {% for message in messages %}
+                                {{ message }}
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            {% endwith %}
+                            
+                            <form method="POST">
+                                {{ form.hidden_tag() }}
+                                
+                                <div class="mb-3">
+                                    {{ form.code.label(class="form-label") }}
+                                    {{ form.code(class="form-control", autocomplete="off", inputmode="numeric", pattern="[0-9]*") }}
+                                    {% if form.code.errors %}
+                                    <div class="invalid-feedback d-block">
+                                        {% for error in form.code.errors %}
+                                        <span>{{ error }}</span>
+                                        {% endfor %}
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                
+                                <div class="d-flex justify-content-between">
+                                    <a href="{{ url_for('main.profile') }}" class="btn btn-secondary">Отмена</a>
+                                    {{ form.submit(class="btn btn-primary") }}
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(function() {
+        alert("Ключ скопирован в буфер обмена");
+    }, function() {
+        alert("Не удалось скопировать ключ");
+    });
+}
+</script>
+{% endblock %} 

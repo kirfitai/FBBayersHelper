@@ -1,0 +1,71 @@
+{% extends 'admin/master.html' %}
+
+{% block body %}
+<div class="container">
+    <div class="row mt-4">
+        <div class="col-12">
+            <h1>Панель управления</h1>
+            <p>Добро пожаловать в панель администратора FB Bayers Helper.</p>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-md-3">
+            <div class="card text-white bg-primary mb-3">
+                <div class="card-header">Пользователи</div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ stats.users_count }}</h5>
+                    <p class="card-text">зарегистрированных пользователей</p>
+                    <a href="{{ url_for('user.index_view') }}" class="btn btn-light btn-sm">Управление</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-success mb-3">
+                <div class="card-header">Конверсии</div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ stats.conversions_count }}</h5>
+                    <p class="card-text">записей конверсий</p>
+                    <a href="{{ url_for('conversion.index_view') }}" class="btn btn-light btn-sm">Просмотр</a>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-info mb-3">
+                <div class="card-header">Сетапы</div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ stats.setups_count }}</h5>
+                    <p class="card-text">настроек пороговых значений</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-3">
+            <div class="card text-white bg-warning mb-3">
+                <div class="card-header">Токены Facebook</div>
+                <div class="card-body">
+                    <h5 class="card-title">{{ stats.tokens_count }}</h5>
+                    <p class="card-text">токенов Facebook API</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="row mt-4">
+        <div class="col-12">
+            <div class="card">
+                <div class="card-header">
+                    <h5>Быстрые действия</h5>
+                </div>
+                <div class="card-body">
+                    <a href="{{ url_for('auth.register') }}" class="btn btn-primary">
+                        <i class="fa fa-user-plus"></i> Создать пользователя
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

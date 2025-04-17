@@ -1,18 +1,21 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session, current_app, Response, abort
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.user import User
 from app.models.setup import Setup, ThresholdEntry, CampaignSetup
 from app.models.token import FacebookToken
-from app.forms import SetupForm, CampaignSetupForm, CampaignRefreshForm, ThresholdForm
+from app.forms import SetupForm, CampaignSetupForm, CampaignRefreshForm, ThresholdForm, AddCampaignForm, ConversionFilterForm
 from app.services.fb_api_client import FacebookAdClient
 from app.services.token_checker import TokenChecker
 from app.models.conversion import Conversion
+from app.services.facebook_api import FacebookAPI
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, date
 import random
 import string
+import time
+import uuid
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -20,13 +23,34 @@ logger = logging.getLogger(__name__)
 bp = Blueprint('main', __name__)
 
 @bp.route('/')
-@bp.route('/index')
+@login_required
 def index():
+    # Если пользователь не залогинен, перенаправляем на страницу логина
     if not current_user.is_authenticated:
         return redirect(url_for('auth.login'))
     
-    setups = Setup.query.filter_by(user_id=current_user.id).all()
-    return render_template('index.html', title='Главная', setups=setups)
+    # Получаем статистику для пользователя
+    setups_count = Setup.query.filter_by(user_id=current_user.id).count()
+    campaigns_count = CampaignSetup.query.filter_by(user_id=current_user.id).count()
+    
+    # Получаем токены пользователя
+    tokens = FacebookToken.query.filter_by(user_id=current_user.id).limit(5).all()
+    tokens_count = FacebookToken.query.filter_by(user_id=current_user.id).count()
+    
+    # 5 последних сетапов пользователя
+    recent_setups = Setup.query.filter_by(user_id=current_user.id).order_by(Setup.updated_at.desc()).limit(5).all()
+    
+    return render_template('index.html', 
+                           setups_count=setups_count,
+                           campaigns_count=campaigns_count,
+                           tokens=tokens,
+                           tokens_count=tokens_count,
+                           recent_setups=recent_setups)
+
+@bp.route('/profile')
+@login_required
+def profile():
+    return render_template('profile.html')
 
 # Маршруты для управления сетапами
 

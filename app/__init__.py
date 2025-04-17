@@ -13,6 +13,10 @@ def create_app(config_class=Config):
     csrf.init_app(app)
     
     with app.app_context():
+        # Инициализация админ-панели
+        from app.admin import init_admin
+        init_admin(app)
+        
         # Добавляем глобальную функцию для шаблонов
         @app.template_global()
         def generate_csrf_token():
