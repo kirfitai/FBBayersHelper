@@ -8,6 +8,7 @@ from app.models.setup import Setup, CampaignSetup, ThresholdEntry
 from app.models.token import FacebookToken, FacebookTokenAccount
 from app.models.conversion import Conversion
 import pyotp
+import logging
 
 # Базовый класс для ограничения доступа только администраторам
 class AdminRequiredMixin:
@@ -23,11 +24,20 @@ class AdminHomeView(AdminRequiredMixin, AdminIndexView):
     @expose('/')
     def index(self):
         stats = {
-            'users_count': User.query.count(),
-            'conversions_count': Conversion.query.count(),
-            'setups_count': Setup.query.count(),
-            'tokens_count': FacebookToken.query.count()
+            'users_count': 0,
+            'conversions_count': 0,
+            'setups_count': 0,
+            'tokens_count': 0
         }
+        
+        try:
+            stats['users_count'] = User.query.count()
+            stats['conversions_count'] = Conversion.query.count()
+            stats['setups_count'] = Setup.query.count()
+            stats['tokens_count'] = FacebookToken.query.count()
+        except Exception as e:
+            logging.error(f"Ошибка при загрузке статистики для админ-панели: {str(e)}")
+            
         return self.render('admin/index.html', stats=stats)
 
 # Управление пользователями
@@ -80,16 +90,27 @@ class ConversionAdmin(AdminRequiredMixin, ModelView):
 # Настройка админ-панели
 def init_admin(app):
     try:
+        # Регистрируем index_view отдельно, чтобы избежать ошибок при инициализации
+        index_view = AdminHomeView(name='Панель управления', url='/admin')
+        
         admin = Admin(
             app, 
             name='FB Bayers Helper Admin', 
             template_mode='bootstrap4',
-            index_view=AdminHomeView(name='Панель управления', url='/admin')
+            index_view=index_view,
+            base_template='admin/master.html'
         )
         
-        # Регистрация моделей
-        admin.add_view(UserAdmin(User, db.session, name='Пользователи'))
-        admin.add_view(ConversionAdmin(Conversion, db.session, name='Конверсии'))
+        # Оборачиваем каждую регистрацию в try-except
+        try:
+            admin.add_view(UserAdmin(User, db.session, name='Пользователи'))
+        except Exception as e:
+            app.logger.error(f"Ошибка при регистрации представления User: {str(e)}")
+            
+        try:
+            admin.add_view(ConversionAdmin(Conversion, db.session, name='Конверсии'))
+        except Exception as e:
+            app.logger.error(f"Ошибка при регистрации представления Conversion: {str(e)}")
         
         return admin
     except Exception as e:

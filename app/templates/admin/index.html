@@ -4,15 +4,15 @@
 <div class="container">
     <div class="row mt-4">
         <div class="col-12">
-            <h1>Панель управления</h1>
-            <p>Добро пожаловать в панель администратора FB Bayers Helper.</p>
+            <h1>FB Bayers Helper - Панель управления</h1>
+            <p>Добро пожаловать в панель администратора.</p>
         </div>
     </div>
     
     <div class="row mt-4">
         <div class="col-md-3">
-            <div class="card text-white bg-primary mb-3">
-                <div class="card-header">Пользователи</div>
+            <div class="card mb-3">
+                <div class="card-header bg-primary text-white">Пользователи</div>
                 <div class="card-body">
                     <h5 class="card-title">{{ stats.users_count }}</h5>
                     <p class="card-text">зарегистрированных пользователей</p>
@@ -22,8 +22,8 @@
         </div>
         
         <div class="col-md-3">
-            <div class="card text-white bg-success mb-3">
-                <div class="card-header">Конверсии</div>
+            <div class="card mb-3">
+                <div class="card-header bg-success text-white">Конверсии</div>
                 <div class="card-body">
                     <h5 class="card-title">{{ stats.conversions_count }}</h5>
                     <p class="card-text">записей конверсий</p>
@@ -61,7 +61,7 @@
                 </div>
                 <div class="card-body">
                     <a href="{{ url_for('auth.register') }}" class="btn btn-primary">
-                        <i class="fa fa-user-plus"></i> Создать пользователя
+                        Создать пользователя
                     </a>
                 </div>
             </div>
