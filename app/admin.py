@@ -2,7 +2,7 @@ from flask_admin import Admin, AdminIndexView, expose
 from flask_admin.contrib.sqla import ModelView
 from flask_login import current_user
 from flask import redirect, url_for, flash, request, abort
-from app import db
+from app.extensions import db
 from app.models.user import User
 from app.models.setup import Setup, CampaignSetup, ThresholdEntry
 from app.models.token import FacebookToken, FacebookTokenAccount
@@ -79,15 +79,19 @@ class ConversionAdmin(AdminRequiredMixin, ModelView):
 
 # Настройка админ-панели
 def init_admin(app):
-    admin = Admin(
-        app, 
-        name='FB Bayers Helper Admin', 
-        template_mode='bootstrap4',
-        index_view=AdminHomeView(name='Панель управления', url='/admin')
-    )
-    
-    # Регистрация моделей
-    admin.add_view(UserAdmin(User, db.session, name='Пользователи'))
-    admin.add_view(ConversionAdmin(Conversion, db.session, name='Конверсии'))
-    
-    return admin 
+    try:
+        admin = Admin(
+            app, 
+            name='FB Bayers Helper Admin', 
+            template_mode='bootstrap4',
+            index_view=AdminHomeView(name='Панель управления', url='/admin')
+        )
+        
+        # Регистрация моделей
+        admin.add_view(UserAdmin(User, db.session, name='Пользователи'))
+        admin.add_view(ConversionAdmin(Conversion, db.session, name='Конверсии'))
+        
+        return admin
+    except Exception as e:
+        app.logger.error(f"Ошибка при инициализации админки: {str(e)}")
+        return None 
