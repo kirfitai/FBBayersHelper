@@ -483,6 +483,10 @@ def check_campaign_setup(id):
     
     logger.info(f"Запуск принудительной проверки для кампании {campaign_setup.campaign_id}")
     
+    # Инициализируем массив для хранения подробных логов
+    detailed_logs = []
+    detailed_logs.append(f"Начинаем проверку кампании {campaign_setup.campaign_id} ({campaign_setup.campaign_name or 'Без имени'})")
+    
     try:
         # Импортируем функцию для проверки кампаний
         from app.scheduler import check_campaign_thresholds
@@ -490,9 +494,42 @@ def check_campaign_setup(id):
         # Получаем период проверки из связанного сетапа
         setup = Setup.query.get(campaign_setup.setup_id)
         check_period = setup.check_period if setup else None
+        detailed_logs.append(f"Используем период проверки: {check_period or 'today'}")
+        
+        # Создаем свой обработчик логирования для перехвата сообщений
+        class DetailedLogHandler(logging.Handler):
+            def __init__(self, log_list):
+                super().__init__()
+                self.log_list = log_list
+                
+            def emit(self, record):
+                # Форматируем и добавляем запись логера в наш список
+                log_entry = self.format(record)
+                self.log_list.append(log_entry)
+        
+        # Создаем и добавляем обработчик для перехвата логов
+        log_handler = DetailedLogHandler(detailed_logs)
+        log_handler.setLevel(logging.INFO)
+        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+        log_handler.setFormatter(formatter)
+        
+        check_logger = logging.getLogger('app.scheduler')
+        check_logger.addHandler(log_handler)
+        
+        # Сохраняем текущий уровень логирования и устанавливаем INFO, чтобы получать подробные логи
+        original_level = check_logger.level
+        check_logger.setLevel(logging.INFO)
+        
+        detailed_logs.append("Инициируем проверку кампании...")
         
         # Выполняем проверку и получаем детальную информацию о результатах
         result, ads_results = check_campaign_thresholds(campaign_setup.campaign_id, check_period, return_details=True)
+        
+        # Восстанавливаем оригинальный уровень логирования и удаляем обработчик
+        check_logger.setLevel(original_level)
+        check_logger.removeHandler(log_handler)
+        
+        detailed_logs.append(f"Проверка завершена с результатом: {'Успешно' if result else 'Ошибка'}")
         
         # Обновляем время последней проверки
         campaign_setup.last_checked = datetime.utcnow()
@@ -500,9 +537,11 @@ def check_campaign_setup(id):
         
         # Формируем HTML-таблицу с результатами для сохранения в сессии
         if ads_results:
+            detailed_logs.append(f"Найдено {len(ads_results)} объявлений для проверки")
+            
             # Верхняя часть таблицы
             html_details = """
-            <div class="card">
+            <div class="card mb-4">
                 <div class="card-header bg-primary text-white">
                     <h5 class="mb-0">Результаты последней проверки</h5>
                 </div>
@@ -598,6 +637,25 @@ def check_campaign_setup(id):
             </div>
             """
             
+            # Добавляем детальный лог выполнения
+            html_details += """
+            <div class="card">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Подробный лог проверки</h5>
+                </div>
+                <div class="card-body">
+                    <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
+            """
+            
+            for log_entry in detailed_logs:
+                html_details += f"<div>{log_entry}</div>"
+                
+            html_details += """
+                    </div>
+                </div>
+            </div>
+            """
+            
             # Сохраняем HTML с результатами в сессии
             session['check_details_html'] = html_details
             session['check_campaign_id'] = campaign_setup.campaign_id
@@ -605,11 +663,87 @@ def check_campaign_setup(id):
             # Отображаем успешное сообщение с инструкцией
             flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно. Нажмите на строку кампании, чтобы увидеть подробные результаты.', 'success')
         else:
+            detailed_logs.append("Объявления не найдены в кампании")
+            
+            # Создаем HTML с детальным логом, но без таблицы результатов
+            html_details = """
+            <div class="card">
+                <div class="card-header bg-warning">
+                    <h5 class="mb-0">Объявления не найдены</h5>
+                </div>
+                <div class="card-body">
+                    <p>В этой кампании не удалось найти объявления для проверки.</p>
+                </div>
+            </div>
+            
+            <div class="card mt-3">
+                <div class="card-header bg-secondary text-white">
+                    <h5 class="mb-0">Подробный лог проверки</h5>
+                </div>
+                <div class="card-body">
+                    <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
+            """
+            
+            for log_entry in detailed_logs:
+                html_details += f"<div>{log_entry}</div>"
+                
+            html_details += """
+                    </div>
+                </div>
+            </div>
+            """
+            
+            # Сохраняем HTML с логом в сессии
+            session['check_details_html'] = html_details
+            session['check_campaign_id'] = campaign_setup.campaign_id
+            
             flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'success')
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
         import traceback
-        logger.error(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        logger.error(error_trace)
+        
+        # Добавляем информацию об ошибке в подробный лог
+        detailed_logs.append(f"ОШИБКА: {str(e)}")
+        detailed_logs.append("Трассировка ошибки:")
+        for line in error_trace.split('\n'):
+            if line.strip():
+                detailed_logs.append(line)
+        
+        # Создаем HTML с информацией об ошибке
+        html_details = """
+        <div class="card">
+            <div class="card-header bg-danger text-white">
+                <h5 class="mb-0">Ошибка при проверке кампании</h5>
+            </div>
+            <div class="card-body">
+                <p>При проверке кампании произошла ошибка:</p>
+                <div class="alert alert-danger">%s</div>
+            </div>
+        </div>
+        
+        <div class="card mt-3">
+            <div class="card-header bg-secondary text-white">
+                <h5 class="mb-0">Подробный лог проверки</h5>
+            </div>
+            <div class="card-body">
+                <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
+        """ % str(e)
+        
+        for log_entry in detailed_logs:
+            html_details += f"<div>{log_entry}</div>"
+            
+        html_details += """
+                </div>
+            </div>
+        </div>
+        """
+        
+        # Сохраняем HTML с информацией об ошибке в сессии
+        session['check_details_html'] = html_details
+        session['check_campaign_id'] = campaign_setup.campaign_id
+        
         flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
     
     return redirect(url_for('main.campaigns'))
