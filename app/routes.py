@@ -16,6 +16,7 @@ import string
 from pathlib import Path
 import os
 import glob
+from markupsafe import Markup
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -490,94 +491,122 @@ def check_campaign_setup(id):
         setup = Setup.query.get(campaign_setup.setup_id)
         check_period = setup.check_period if setup else None
         
-        # Выполняем проверку
-        result = check_campaign_thresholds(campaign_setup.campaign_id, check_period)
+        # Выполняем проверку и получаем детальную информацию о результатах
+        result, ads_results = check_campaign_thresholds(campaign_setup.campaign_id, check_period, return_details=True)
         
         # Обновляем время последней проверки
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
-        # Проверяем наличие директории для логов
-        log_dir = Path('/data/disable_logs')
-        logger.info(f"Проверка существования директории логов: {log_dir}")
-        if not log_dir.exists():
-            logger.warning(f"Директория {log_dir} не существует, пытаемся создать")
-            try:
-                log_dir.mkdir(parents=True, exist_ok=True)
-                logger.info(f"Директория {log_dir} создана успешно")
-            except Exception as mkdir_error:
-                logger.error(f"Ошибка при создании директории {log_dir}: {str(mkdir_error)}")
-        else:
-            logger.info(f"Директория {log_dir} существует")
-            try:
-                # Проверяем права на запись
-                test_file = log_dir / "test_write.txt"
-                with open(test_file, 'w') as f:
-                    f.write("test")
-                test_file.unlink()  # Удаляем тестовый файл
-                logger.info("Тест записи в директорию логов успешен")
-            except Exception as write_error:
-                logger.error(f"Ошибка при проверке прав на запись в {log_dir}: {str(write_error)}")
-        
-        # Ищем последний отчет о проверке
-        json_pattern = str(log_dir / f"check_report_{campaign_setup.campaign_id}_*.json")
-        logger.info(f"Ищем отчеты по маске: {json_pattern}")
-        json_files = glob.glob(json_pattern)
-        logger.info(f"Найдено файлов отчетов: {len(json_files)}")
-        
-        if json_files:
-            # Сортируем по времени создания (от новых к старым)
-            json_files = sorted(json_files, key=os.path.getctime, reverse=True)
-            latest_report_file = json_files[0]
-            logger.info(f"Последний отчет: {latest_report_file}")
-            try:
-                with open(latest_report_file, 'r') as f:
-                    report_data = json.load(f)
-                    logger.info(f"Отчет успешно прочитан, размер данных: {len(str(report_data))} байт")
-                    
-                # Детали отчёта для отладки
-                logger.info(f"Ключи в отчете: {list(report_data.keys())}")
-                
-                # Возвращаем шаблон с отчётом
-                logger.info(f"Рендерим шаблон check_report.html")
-                return render_template('campaigns/check_report.html',
-                                     title='Отчет о проверке кампании',
-                                     campaign_id=campaign_setup.campaign_id,
-                                     campaign_name=campaign_setup.campaign_name,
-                                     report_lines=report_data.get('report_lines', []),
-                                     date_range=report_data.get('date_range', ''),
-                                     period=report_data.get('period', ''),
-                                     total_ads=report_data.get('total_ads', 0),
-                                     successful_disabled=report_data.get('successful_disabled', 0),
-                                     failed_disabled=report_data.get('failed_disabled', 0),
-                                     skipped_ads=report_data.get('skipped_ads', 0),
-                                     timestamp=report_data.get('timestamp', ''))
-            except Exception as e:
-                logger.error(f"Ошибка при чтении отчета {latest_report_file}: {str(e)}")
-                import traceback
-                logger.error(traceback.format_exc())
-        else:
-            logger.warning(f"Файлы отчетов не найдены по маске {json_pattern}")
+        # Формируем HTML-таблицу с результатами
+        if ads_results:
+            # Верхняя часть таблицы
+            html_details = """
+            <div class="container mt-3">
+                <div class="alert alert-info">
+                    <strong>Результаты проверки объявлений:</strong>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-striped table-sm">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>ID объявления</th>
+                                <th>Название</th>
+                                <th>Статус</th>
+                                <th>Расход ($)</th>
+                                <th>Конверсии</th>
+                                <th>Требуется</th>
+                                <th>Результат</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+            """
             
-            # Проверяем все файлы в директории для отладки
-            try:
-                all_files = list(log_dir.glob('*'))
-                logger.info(f"Все файлы в директории {log_dir}: {[f.name for f in all_files]}")
-            except Exception as ls_error:
-                logger.error(f"Ошибка при просмотре директории {log_dir}: {str(ls_error)}")
-        
-        # Если нет файла отчета или произошла ошибка при чтении
-        if result:
-            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно', 'success')
+            # Строки таблицы с данными по каждому объявлению
+            for ad in ads_results:
+                # Определяем класс стиля для результата
+                result_class = ""
+                if ad.get('result') == "ПРОШЛО":
+                    result_class = "text-success"
+                elif ad.get('result') == "НЕ ПРОШЛО":
+                    result_class = "text-danger"
+                else:
+                    result_class = "text-secondary"
+                    
+                html_details += f"""
+                <tr>
+                    <td>{ad.get('id', 'Н/Д')}</td>
+                    <td>{ad.get('name', 'Н/Д')[:20]}</td>
+                    <td>{ad.get('status', 'Н/Д')}</td>
+                    <td>${ad.get('spend', 0):.2f}</td>
+                    <td>{ad.get('conversions', 0)}</td>
+                    <td>{ad.get('required_conversions', 0)}</td>
+                    <td><span class="{result_class}"><strong>{ad.get('result', 'Н/Д')}</strong></span></td>
+                </tr>
+                """
+            
+            # Нижняя часть таблицы и итоги
+            successful_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and ad.get('disabled_success', False))
+            failed_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and not ad.get('disabled_success', False))
+            skipped_ads = sum(1 for ad in ads_results if ad.get('status') != 'ACTIVE')
+            
+            html_details += """
+                        </tbody>
+                    </table>
+                </div>
+                
+                <div class="row mt-3">
+            """
+            
+            # Карточки с итогами
+            html_details += f"""
+                    <div class="col-md-3">
+                        <div class="card bg-light">
+                            <div class="card-body p-2 text-center">
+                                <h6 class="card-title">Всего объявлений</h6>
+                                <p class="card-text lead">{len(ads_results)}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-success text-white">
+                            <div class="card-body p-2 text-center">
+                                <h6 class="card-title">Отключено успешно</h6>
+                                <p class="card-text lead">{successful_disabled}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-danger text-white">
+                            <div class="card-body p-2 text-center">
+                                <h6 class="card-title">Ошибки отключения</h6>
+                                <p class="card-text lead">{failed_disabled}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card bg-info text-white">
+                            <div class="card-body p-2 text-center">
+                                <h6 class="card-title">Пропущено</h6>
+                                <p class="card-text lead">{skipped_ads}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            """
+            
+            # Отображаем результаты прямо в сообщении flash
+            flash(Markup(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно.') + 
+                  Markup(html_details), 'success')
         else:
-            flash(f'Проверка кампании выполнена с ошибками', 'warning')
+            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'success')
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
         import traceback
         logger.error(traceback.format_exc())
         flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
     
-    logger.info("Перенаправление на страницу кампаний")
     return redirect(url_for('main.campaigns'))
 
 @bp.route('/api/conversion/add', methods=['GET', 'POST'])

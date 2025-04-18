@@ -49,7 +49,7 @@ def calculate_date_range_for_period(check_period):
     
     return since_date, until_date
 
-def check_campaign_thresholds(campaign_id=None, check_period=None):
+def check_campaign_thresholds(campaign_id=None, check_period=None, return_details=False):
     """
     Проверяет пороги кампаний и отключает объявления в кампаниях, если пороги превышены.
     Проверка выполняется для каждого объявления отдельно.
@@ -58,9 +58,11 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
         campaign_id (str, optional): ID кампании для проверки. По умолчанию проверяются все кампании.
         check_period (str, optional): Период проверки ('today', 'last2days', 'last3days', 'last7days', 'alltime').
             По умолчанию используется период из настройки кампании.
+        return_details (bool, optional): Вернуть детальную информацию о проверке каждого объявления.
     
     Returns:
         bool: True если все проверки выполнены успешно, иначе False
+        list: (опционально) Список с детальной информацией о каждом объявлении, если return_details=True
     """
     try:
         # Создаем строку для вывода отчета по проверке
@@ -68,6 +70,9 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
         report_output.append("=" * 80)
         report_output.append("ОТЧЕТ ПО ПРОВЕРКЕ ОБЪЯВЛЕНИЙ")
         report_output.append("=" * 80)
+        
+        # Список с детальной информацией о каждом объявлении
+        ads_results = []
         
         # Если campaign_id указан, проверяем только эту кампанию
         if campaign_id:
@@ -77,6 +82,8 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
             ).all()
             if not campaign_setups:
                 logger.warning(f"Кампания {campaign_id} не найдена или не активна")
+                if return_details:
+                    return False, []
                 return False
         else:
             # Получаем все активные настройки кампаний
@@ -86,6 +93,8 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
             
         if not campaign_setups:
             logger.info("Нет активных настроек кампаний для проверки")
+            if return_details:
+                return True, []
             return True
             
         # Обработка каждой кампании
@@ -210,10 +219,24 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     if not ad_id:
                         continue
                     
+                    # Создаем запись о результате проверки объявления
+                    ad_result = {
+                        'id': ad_id,
+                        'name': ad_name,
+                        'status': ad_status,
+                        'conversions': campaign_conversions,
+                        'disabled': False,
+                        'disabled_success': False
+                    }
+                    
                     # Если объявление уже отключено, пропускаем его
                     if ad_status != 'ACTIVE':
                         report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} -{'':9} -{'':9} -{'':9} Неактивно")
                         skipped_ads += 1
+                        ad_result['result'] = "Неактивно"
+                        ad_result['spend'] = 0
+                        ad_result['required_conversions'] = 0
+                        ads_results.append(ad_result)
                         continue
                     
                     # Получаем статистику объявления
@@ -221,6 +244,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     
                     # Расход на объявление
                     ad_spend = float(ad_stats.get('spend', 0))
+                    ad_result['spend'] = ad_spend
                     
                     # Проверяем, превышены ли пороги
                     should_disable = False
@@ -240,23 +264,34 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     # Если нашли подходящий порог, проверяем условие
                     if applicable_threshold:
                         required_conversions = applicable_threshold['conversions']
+                        ad_result['required_conversions'] = required_conversions
                         if campaign_conversions < required_conversions:
                             should_disable = True
+                    else:
+                        ad_result['required_conversions'] = 0
                     
                     # Выводим информацию о проверке
                     if should_disable:
                         result = "НЕ ПРОШЛО"
+                        ad_result['result'] = result
+                        ad_result['disabled'] = True
+                        
                         # Отключаем объявление
                         disable_result = fb_api.disable_ad(ad_id)
                         if disable_result:
                             successful_disabled += 1
+                            ad_result['disabled_success'] = True
                             report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
                         else:
                             failed_disabled += 1
                             report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result} (ОШИБКА)")
                     else:
                         result = "ПРОШЛО"
+                        ad_result['result'] = result
                         report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
+                    
+                    # Добавляем результат проверки в список
+                    ads_results.append(ad_result)
                 
                 # Выводим итоговую статистику
                 report_output.append("-" * 80)
@@ -320,7 +355,8 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                         'skipped_ads': skipped_ads,
                         'total_ads': len(ads),
                         'period': period,
-                        'date_range': f"{since_date} - {until_date}"
+                        'date_range': f"{since_date} - {until_date}",
+                        'ads_results': ads_results  # Добавляем детальную информацию о проверке
                     }
                     
                     json_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{timestamp}.json"
@@ -352,9 +388,14 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
             except Exception as e:
                 logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
                 continue
-                
+        
+        if return_details:
+            logger.info(f"Возвращаем детальную информацию о {len(ads_results)} объявлениях")
+            return True, ads_results
         return True
                 
     except Exception as e:
         logger.error(f"Ошибка при проверке порогов кампаний: {str(e)}")
+        if return_details:
+            return False, []
         return False 
