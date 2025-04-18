@@ -211,6 +211,13 @@ class FacebookAdClient:
         
         # Пробуем сначала использовать прямой API запрос с пагинацией
         try:
+            # Проверяем формат ID кампании
+            if not campaign_id:
+                logger.error("Пустой ID кампании")
+                return []
+                
+            logger.info(f"Попытка запроса объявлений с использованием прямого API запроса для кампании {campaign_id}")
+            
             next_url = f'https://graph.facebook.com/v18.0/{campaign_id}/ads'
             params = {
                 'access_token': self.access_token,
@@ -219,38 +226,62 @@ class FacebookAdClient:
             }
             
             while next_url:
-                if '?' in next_url:
-                    # Если next_url уже содержит параметры, не используем params
-                    response = requests.get(next_url, timeout=30)
-                else:
-                    # Иначе используем исходные параметры
-                    response = requests.get(next_url, params=params, timeout=30)
-                
-                if response.status_code != 200:
-                    error_msg = f"Ошибка API при получении объявлений: {response.status_code} - {response.text}"
-                    logger.warning(error_msg)
+                try:
+                    logger.info(f"Запрос URL: {next_url.split('?')[0]} (с параметрами)")
+                    
+                    if '?' in next_url:
+                        # Если next_url уже содержит параметры, не используем params
+                        response = requests.get(next_url, timeout=30)
+                    else:
+                        # Иначе используем исходные параметры
+                        response = requests.get(next_url, params=params, timeout=30)
+                    
+                    if response.status_code != 200:
+                        error_msg = f"Ошибка API при получении объявлений: {response.status_code} - {response.text}"
+                        logger.warning(error_msg)
+                        break
+                    
+                    data = response.json()
+                    
+                    # Проверяем наличие ошибок в ответе
+                    if 'error' in data:
+                        error_msg = f"Ошибка в ответе API: {data['error'].get('message')}"
+                        logger.warning(error_msg)
+                        break
+                        
+                    ads_data = data.get('data', [])
+                    
+                    if not ads_data:
+                        logger.warning(f"Ответ API не содержит объявлений для кампании {campaign_id}")
+                        
+                    logger.info(f"Получено {len(ads_data)} объявлений на странице через прямой API запрос")
+                    
+                    for ad_data in ads_data:
+                        # Создаем объект Ad, чтобы совместимость с остальным кодом
+                        from facebook_business.adobjects.ad import Ad
+                        ad = Ad(ad_data.get('id'))
+                        
+                        # Копируем все данные из ответа API в атрибуты объекта
+                        for key, value in ad_data.items():
+                            setattr(ad, key, value)
+                        
+                        all_ads.append(ad)
+                        logger.debug(f"Добавлено объявление: ID={ad_data.get('id')}, Name={ad_data.get('name')}, Status={ad_data.get('status')}")
+                    
+                    # Проверяем наличие следующей страницы
+                    paging = data.get('paging', {})
+                    next_url = paging.get('next')
+                    
+                    if not next_url:
+                        logger.info("Достигнут конец пагинации, больше страниц нет")
+                        break
+                        
+                except requests.exceptions.Timeout:
+                    logger.warning(f"Таймаут при запросе объявлений для кампании {campaign_id}")
+                    # Прерываем цикл после таймаута
                     break
-                
-                data = response.json()
-                ads_data = data.get('data', [])
-                logger.info(f"Получено {len(ads_data)} объявлений на странице через прямой API запрос")
-                
-                for ad_data in ads_data:
-                    # Создаем объект Ad, чтобы совместимость с остальным кодом
-                    from facebook_business.adobjects.ad import Ad
-                    ad = Ad(ad_data.get('id'))
-                    
-                    # Копируем все данные из ответа API в атрибуты объекта
-                    for key, value in ad_data.items():
-                        setattr(ad, key, value)
-                    
-                    all_ads.append(ad)
-                
-                # Проверяем наличие следующей страницы
-                paging = data.get('paging', {})
-                next_url = paging.get('next')
-                
-                if not next_url:
+                except requests.exceptions.RequestException as e:
+                    logger.warning(f"Ошибка запроса при получении объявлений: {str(e)}")
                     break
             
             # Если получили объявления через прямой API, возвращаем их
@@ -264,66 +295,125 @@ class FacebookAdClient:
                 
         except Exception as api_error:
             logger.warning(f"Ошибка при получении объявлений через прямой API: {str(api_error)}")
+            import traceback
+            logger.debug(f"Трассировка: {traceback.format_exc()}")
         
         # Если прямой API запрос не сработал, пробуем через SDK
+        logger.info(f"Попытка запроса объявлений с использованием SDK для кампании {campaign_id}")
         try:
             from facebook_business.adobjects.campaign import Campaign
+            from facebook_business.exceptions import FacebookRequestError
             
             campaign = Campaign(campaign_id)
             campaign.api = self.api  # Устанавливаем API
             
-            ads = campaign.get_ads(fields=['id', 'name', 'status', 'creative', 'effective_status', 'delivery_info'])
-            
-            logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_id} через SDK")
-            
-            # Подсчитываем количество активных и отключенных объявлений
-            active_count = sum(1 for ad in ads if ad.get('status') == 'ACTIVE')
-            paused_count = sum(1 for ad in ads if ad.get('status') == 'PAUSED')
-            
-            logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
-            
-            return ads
-            
+            try:
+                # Указываем больше полей для получения максимальной информации
+                ads = campaign.get_ads(fields=[
+                    'id', 'name', 'status', 'creative', 'effective_status', 
+                    'delivery_info', 'adset_id', 'campaign_id', 'bid_amount'
+                ])
+                
+                logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_id} через SDK")
+                
+                # Подсчитываем количество активных и отключенных объявлений
+                active_count = sum(1 for ad in ads if ad.get('status') == 'ACTIVE')
+                paused_count = sum(1 for ad in ads if ad.get('status') == 'PAUSED')
+                
+                logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
+                
+                if not ads:
+                    logger.warning(f"SDK вернул пустой список объявлений для кампании {campaign_id}")
+                
+                return ads
+                
+            except FacebookRequestError as fb_error:
+                logger.error(f"Ошибка Facebook API при получении объявлений через SDK: {fb_error}")
+                logger.error(f"Код ошибки: {fb_error.api_error_code()}, Тип: {fb_error.api_error_type()}, Сообщение: {fb_error.api_error_message()}")
+                # Продолжаем к следующей попытке
+                
         except Exception as e:
             logger.error(f"Ошибка при получении объявлений для кампании {campaign_id} через SDK: {str(e)}")
+            import traceback
+            logger.debug(f"Трассировка: {traceback.format_exc()}")
             
-            # Если и это не сработало, последняя попытка
-            try:
-                import urllib.request
-                import urllib.parse
-                import json
+        # Если и это не сработало, последняя попытка через альтернативный метод Graph API
+        logger.info(f"Попытка запроса объявлений с использованием альтернативного метода для кампании {campaign_id}")
+        try:
+            # Запрос информации о группе объявлений (adsets) в кампании
+            logger.info(f"Запрос групп объявлений (adsets) для кампании {campaign_id}")
+            adsets_url = f'https://graph.facebook.com/v18.0/{campaign_id}/adsets'
+            adsets_params = {
+                'access_token': self.access_token,
+                'fields': 'id,name,status',
+                'limit': 100
+            }
+            
+            adsets_response = requests.get(adsets_url, params=adsets_params, timeout=30)
+            
+            if adsets_response.status_code == 200:
+                adsets_data = adsets_response.json()
+                adsets = adsets_data.get('data', [])
                 
-                url = f'https://graph.facebook.com/v18.0/{campaign_id}/ads?access_token={self.access_token}&fields=id,name,status,creative&limit=100'
+                logger.info(f"Получено {len(adsets)} групп объявлений для кампании {campaign_id}")
                 
-                try:
-                    with urllib.request.urlopen(url, timeout=30) as response:
-                        response_data = response.read().decode('utf-8')
-                        data = json.loads(response_data)
-                        ads_data = data.get('data', [])
-                        
-                        # Преобразуем в объекты Ad
-                        from facebook_business.adobjects.ad import Ad
-                        ads = []
-                        for ad_data in ads_data:
-                            ad = Ad(ad_data.get('id'))
-                            for key, value in ad_data.items():
-                                setattr(ad, key, value)
-                            ads.append(ad)
-                            
-                        logger.info(f"Получено {len(ads)} объявлений через низкоуровневый API запрос")
-                        return ads
-                        
-                except urllib.error.HTTPError as e:
-                    logger.error(f"Ошибка HTTP при низкоуровневом запросе: {e.code} - {e.reason}")
-                except urllib.error.URLError as e:
-                    logger.error(f"Ошибка URL при низкоуровневом запросе: {e.reason}")
+                # Получаем объявления для каждой группы объявлений
+                for adset in adsets:
+                    adset_id = adset.get('id')
+                    logger.info(f"Запрос объявлений для группы {adset_id}")
                     
-            except Exception as low_level_error:
-                logger.error(f"Ошибка при низкоуровневом запросе объявлений: {str(low_level_error)}")
+                    ads_url = f'https://graph.facebook.com/v18.0/{adset_id}/ads'
+                    ads_params = {
+                        'access_token': self.access_token,
+                        'fields': 'id,name,status,creative,effective_status',
+                        'limit': 100
+                    }
+                    
+                    try:
+                        ads_response = requests.get(ads_url, params=ads_params, timeout=30)
+                        
+                        if ads_response.status_code == 200:
+                            ads_data = ads_response.json()
+                            ads_from_adset = ads_data.get('data', [])
+                            
+                            logger.info(f"Получено {len(ads_from_adset)} объявлений из группы {adset_id}")
+                            
+                            for ad_data in ads_from_adset:
+                                from facebook_business.adobjects.ad import Ad
+                                ad = Ad(ad_data.get('id'))
+                                
+                                for key, value in ad_data.items():
+                                    setattr(ad, key, value)
+                                
+                                # Добавляем только если объявление еще не в списке
+                                if not any(getattr(existing_ad, 'id', None) == ad_data.get('id') for existing_ad in all_ads):
+                                    all_ads.append(ad)
+                        else:
+                            logger.warning(f"Ошибка при получении объявлений для группы {adset_id}: {ads_response.status_code} - {ads_response.text}")
+                    
+                    except Exception as adset_error:
+                        logger.warning(f"Ошибка при обработке группы объявлений {adset_id}: {str(adset_error)}")
+                        continue
+            else:
+                logger.warning(f"Ошибка при получении групп объявлений: {adsets_response.status_code} - {adsets_response.text}")
+            
+            # Если получили объявления через этот метод, возвращаем их
+            if all_ads:
+                active_count = sum(1 for ad in all_ads if getattr(ad, 'status', None) == 'ACTIVE')
+                paused_count = sum(1 for ad in all_ads if getattr(ad, 'status', None) == 'PAUSED')
                 
-            # Если все методы не сработали, возвращаем пустой список
-            logger.error(f"Не удалось получить объявления для кампании {campaign_id}, возвращаем пустой список")
-            return []
+                logger.info(f"Всего получено {len(all_ads)} объявлений для кампании {campaign_id} через альтернативный метод")
+                logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
+                return all_ads
+                
+        except Exception as alt_error:
+            logger.error(f"Ошибка при использовании альтернативного метода: {str(alt_error)}")
+            import traceback
+            logger.debug(f"Трассировка: {traceback.format_exc()}")
+            
+        # Если все методы не сработали, возвращаем пустой список
+        logger.error(f"Не удалось получить объявления для кампании {campaign_id}, возвращаем пустой список")
+        return []
     
     def get_ad_insights(self, ad_id, date_preset='today'):
         """
