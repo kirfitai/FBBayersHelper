@@ -497,17 +497,49 @@ def check_campaign_setup(id):
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
+        # Проверяем наличие директории для логов
+        log_dir = Path('/data/disable_logs')
+        logger.info(f"Проверка существования директории логов: {log_dir}")
+        if not log_dir.exists():
+            logger.warning(f"Директория {log_dir} не существует, пытаемся создать")
+            try:
+                log_dir.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Директория {log_dir} создана успешно")
+            except Exception as mkdir_error:
+                logger.error(f"Ошибка при создании директории {log_dir}: {str(mkdir_error)}")
+        else:
+            logger.info(f"Директория {log_dir} существует")
+            try:
+                # Проверяем права на запись
+                test_file = log_dir / "test_write.txt"
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                test_file.unlink()  # Удаляем тестовый файл
+                logger.info("Тест записи в директорию логов успешен")
+            except Exception as write_error:
+                logger.error(f"Ошибка при проверке прав на запись в {log_dir}: {str(write_error)}")
+        
         # Ищем последний отчет о проверке
-        json_pattern = str(Path('/data/disable_logs') / f"check_report_{campaign_setup.campaign_id}_*.json")
-        json_files = sorted(glob.glob(json_pattern), reverse=True)
+        json_pattern = str(log_dir / f"check_report_{campaign_setup.campaign_id}_*.json")
+        logger.info(f"Ищем отчеты по маске: {json_pattern}")
+        json_files = glob.glob(json_pattern)
+        logger.info(f"Найдено файлов отчетов: {len(json_files)}")
         
         if json_files:
+            # Сортируем по времени создания (от новых к старым)
+            json_files = sorted(json_files, key=os.path.getctime, reverse=True)
             latest_report_file = json_files[0]
+            logger.info(f"Последний отчет: {latest_report_file}")
             try:
                 with open(latest_report_file, 'r') as f:
                     report_data = json.load(f)
+                    logger.info(f"Отчет успешно прочитан, размер данных: {len(str(report_data))} байт")
                     
+                # Детали отчёта для отладки
+                logger.info(f"Ключи в отчете: {list(report_data.keys())}")
+                
                 # Возвращаем шаблон с отчётом
+                logger.info(f"Рендерим шаблон check_report.html")
                 return render_template('campaigns/check_report.html',
                                      title='Отчет о проверке кампании',
                                      campaign_id=campaign_setup.campaign_id,
@@ -521,7 +553,18 @@ def check_campaign_setup(id):
                                      skipped_ads=report_data.get('skipped_ads', 0),
                                      timestamp=report_data.get('timestamp', ''))
             except Exception as e:
-                logger.error(f"Ошибка при чтении отчета: {str(e)}")
+                logger.error(f"Ошибка при чтении отчета {latest_report_file}: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+        else:
+            logger.warning(f"Файлы отчетов не найдены по маске {json_pattern}")
+            
+            # Проверяем все файлы в директории для отладки
+            try:
+                all_files = list(log_dir.glob('*'))
+                logger.info(f"Все файлы в директории {log_dir}: {[f.name for f in all_files]}")
+            except Exception as ls_error:
+                logger.error(f"Ошибка при просмотре директории {log_dir}: {str(ls_error)}")
         
         # Если нет файла отчета или произошла ошибка при чтении
         if result:
@@ -530,8 +573,11 @@ def check_campaign_setup(id):
             flash(f'Проверка кампании выполнена с ошибками', 'warning')
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
+        import traceback
+        logger.error(traceback.format_exc())
         flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
     
+    logger.info("Перенаправление на страницу кампаний")
     return redirect(url_for('main.campaigns'))
 
 @bp.route('/api/conversion/add', methods=['GET', 'POST'])

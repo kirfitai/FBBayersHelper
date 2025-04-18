@@ -272,13 +272,44 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     import json
                     
                     log_dir = Path('/data/disable_logs')
-                    log_dir.mkdir(exist_ok=True)
+                    logger.info(f"Попытка создания директории для логов: {log_dir}")
+                    try:
+                        log_dir.mkdir(parents=True, exist_ok=True)
+                        logger.info(f"Директория {log_dir} успешно создана или уже существует")
+                    except Exception as mkdir_error:
+                        logger.error(f"Ошибка при создании директории {log_dir}: {str(mkdir_error)}")
+                        # Пробуем альтернативную директорию
+                        log_dir = Path('/app/static/reports')
+                        logger.info(f"Пробуем альтернативную директорию: {log_dir}")
+                        log_dir.mkdir(parents=True, exist_ok=True)
                     
-                    report_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
-                    with open(report_file, 'w') as f:
-                        f.write("\n".join(report_output))
+                    # Проверяем возможность записи
+                    try:
+                        test_file = log_dir / "test_write.txt"
+                        with open(test_file, 'w') as f:
+                            f.write("test")
+                        test_file.unlink()  # Удаляем тестовый файл
+                        logger.info("Тест записи в директорию логов успешен")
+                    except Exception as write_error:
+                        logger.error(f"Проблема с правами записи в {log_dir}: {str(write_error)}")
+                        # Пробуем использовать временную директорию
+                        import tempfile
+                        log_dir = Path(tempfile.gettempdir())
+                        logger.info(f"Используем временную директорию: {log_dir}")
+                    
+                    timestamp = datetime.utcnow().strftime('%Y%m%d_%H%M%S')
+                    
+                    # Текстовый отчет
+                    report_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{timestamp}.txt"
+                    logger.info(f"Записываем текстовый отчет в {report_file}")
+                    try:
+                        with open(report_file, 'w') as f:
+                            f.write("\n".join(report_output))
+                        logger.info(f"Текстовый отчет успешно записан")
+                    except Exception as txt_error:
+                        logger.error(f"Ошибка при записи текстового отчета: {str(txt_error)}")
                         
-                    # Также сохраняем отчет в JSON для возможного использования в интерфейсе
+                    # JSON отчет
                     report_json = {
                         'timestamp': datetime.utcnow().isoformat(),
                         'campaign_id': campaign_setup.campaign_id,
@@ -292,12 +323,31 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                         'date_range': f"{since_date} - {until_date}"
                     }
                     
-                    json_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
-                    with open(json_file, 'w') as f:
-                        json.dump(report_json, f)
+                    json_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{timestamp}.json"
+                    logger.info(f"Записываем JSON отчет в {json_file}")
+                    try:
+                        with open(json_file, 'w') as f:
+                            json.dump(report_json, f)
+                        logger.info(f"JSON отчет успешно записан")
+                        
+                        # Проверка читаемости JSON-файла
+                        with open(json_file, 'r') as f:
+                            test_read = json.load(f)
+                        logger.info(f"JSON отчет успешно прочитан в тесте")
+                    except Exception as json_error:
+                        logger.error(f"Ошибка при работе с JSON отчетом: {str(json_error)}")
+                        
+                    # Логируем все файлы в директории для диагностики
+                    try:
+                        all_files = list(log_dir.glob('*'))
+                        logger.info(f"Все файлы в директории {log_dir}: {[f.name for f in all_files]}")
+                    except Exception as ls_error:
+                        logger.error(f"Ошибка при просмотре директории: {str(ls_error)}")
                         
                 except Exception as e:
                     logger.error(f"Ошибка при сохранении отчета: {str(e)}")
+                    import traceback
+                    logger.error(traceback.format_exc())
                 
             except Exception as e:
                 logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
