@@ -1,4 +1,5 @@
-from flask import render_template, redirect, url_for, flash, request, jsonify, session
+from datetime import datetime
+from flask import render_template, redirect, url_for, flash, session, request
 from flask_login import login_user, logout_user, current_user, login_required
 from urllib.parse import urlparse
 from app import db  # Используем db из app
@@ -265,3 +266,76 @@ def delete_token(token_id):
     flash(f'Токен "{name}" удален')
     
     return redirect(url_for('auth.manage_tokens'))
+
+@bp.route('/tokens/edit/<int:token_id>', methods=['GET', 'POST'])
+@login_required
+def edit_token(token_id):
+    # Находим токен пользователя
+    token = FacebookToken.query.filter_by(id=token_id, user_id=current_user.id).first_or_404()
+    
+    # Создаем форму
+    form = FacebookTokenForm()
+    
+    # При отправке формы
+    if form.validate_on_submit():
+        # Обновляем данные токена
+        token.name = form.name.data
+        token.access_token = form.access_token.data
+        token.app_id = form.app_id.data if form.app_id.data else None
+        token.app_secret = form.app_secret.data if form.app_secret.data else None
+        token.use_proxy = form.use_proxy.data
+        token.proxy_url = form.proxy_url.data if form.use_proxy.data and form.proxy_url.data else None
+        
+        # Сохраняем изменения
+        db.session.commit()
+        
+        # Обновляем связи с аккаунтами, если они были изменены
+        # Сначала получаем все текущие account_id
+        current_account_ids = [acc.account_id for acc in token.accounts]
+        
+        # Разбиваем строку с новыми account_id
+        new_account_ids = [aid.strip() for aid in form.account_id.data.split(',') if aid.strip()]
+        # Приводим к формату с префиксом 'act_'
+        new_account_ids = [aid if aid.startswith('act_') else f'act_{aid}' for aid in new_account_ids]
+        
+        # Удаляем связи с аккаунтами, которых больше нет в списке
+        for acc in list(token.accounts):
+            if acc.account_id not in new_account_ids:
+                db.session.delete(acc)
+                
+        # Добавляем новые аккаунты
+        for account_id in new_account_ids:
+            if account_id not in current_account_ids:
+                token.add_account(account_id)
+        
+        db.session.commit()
+        
+        # После редактирования проверяем токен
+        checker = TokenChecker()
+        status, error_message, accounts_data = checker.check_token(token)
+        token.update_status(status, error_message)
+        db.session.commit()
+        
+        flash(f'Токен "{token.name}" успешно обновлен')
+        return redirect(url_for('auth.manage_tokens'))
+    
+    # При GET запросе заполняем форму текущими данными
+    elif request.method == 'GET':
+        form.name.data = token.name
+        form.access_token.data = token.access_token
+        form.app_id.data = token.app_id
+        form.app_secret.data = token.app_secret
+        form.use_proxy.data = token.use_proxy
+        form.proxy_url.data = token.proxy_url
+        
+        # Формируем строку с account_id через запятую
+        account_ids = [account.account_id for account in token.accounts]
+        form.account_id.data = ', '.join(account_ids)
+        
+        # Меняем текст кнопки
+        form.submit.label.text = 'Сохранить изменения'
+    
+    return render_template('auth/edit_token.html', 
+                          title='Редактирование токена', 
+                          form=form, 
+                          token=token)

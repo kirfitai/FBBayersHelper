@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+
+{% block title %}Редактирование токена - {{ super() }}{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-md-8 offset-md-2">
+        <div class="card">
+            <div class="card-header">
+                <h3>Редактирование токена "{{ token.name }}"</h3>
+            </div>
+            <div class="card-body">
+                <form method="POST" novalidate>
+                    {{ form.hidden_tag() }}
+                    
+                    <div class="mb-3">
+                        {{ form.name.label(class="form-label") }}
+                        {{ form.name(class="form-control") }}
+                        {% if form.name.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.name.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.access_token.label(class="form-label") }}
+                        {{ form.access_token(class="form-control") }}
+                        {% if form.access_token.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.access_token.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.app_id.label(class="form-label") }}
+                        {{ form.app_id(class="form-control") }}
+                        {% if form.app_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.app_id.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.app_secret.label(class="form-label") }}
+                        {{ form.app_secret(class="form-control") }}
+                        {% if form.app_secret.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.app_secret.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">Необязательно. Для некоторых типов токенов не требуется.</div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        {{ form.account_id.label(class="form-label") }}
+                        {{ form.account_id(class="form-control", placeholder="act_XXXXXXXX, act_YYYYYYYY") }}
+                        {% if form.account_id.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.account_id.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">Можно указать несколько ID аккаунтов через запятую. Префикс "act_" можно не указывать.</div>
+                    </div>
+                    
+                    <div class="mb-3 form-check">
+                        {{ form.use_proxy(class="form-check-input", id="use_proxy_checkbox") }}
+                        {{ form.use_proxy.label(class="form-check-label") }}
+                    </div>
+                    
+                    <div class="mb-3" id="proxy_url_container">
+                        {{ form.proxy_url.label(class="form-label") }}
+                        {{ form.proxy_url(class="form-control") }}
+                        {% if form.proxy_url.errors %}
+                        <div class="invalid-feedback d-block">
+                            {% for error in form.proxy_url.errors %}
+                            <span>{{ error }}</span>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                        <div class="form-text">Формат: http://username:password@host:port</div>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between">
+                        <a href="{{ url_for('auth.manage_tokens') }}" class="btn btn-secondary">Отмена</a>
+                        {{ form.submit(class="btn btn-primary") }}
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Управление отображением поля прокси
+    const useProxyCheckbox = document.getElementById('use_proxy_checkbox');
+    const proxyUrlContainer = document.getElementById('proxy_url_container');
+    
+    if (useProxyCheckbox && proxyUrlContainer) {
+        // Инициализация при загрузке страницы
+        proxyUrlContainer.style.display = useProxyCheckbox.checked ? 'block' : 'none';
+        
+        // Обработчик изменения чекбокса
+        useProxyCheckbox.addEventListener('change', function() {
+            proxyUrlContainer.style.display = this.checked ? 'block' : 'none';
+        });
+    }
+});
+</script>
+{% endblock %} 

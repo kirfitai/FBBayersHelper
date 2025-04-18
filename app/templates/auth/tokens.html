@@ -184,6 +184,9 @@
                                                 
                                                 <div class="row token-actions">
                                                     <div class="col-12">
+                                                        <a href="{{ url_for('auth.edit_token', token_id=token.id) }}" class="btn btn-primary mr-2" style="margin-right: 10px;">
+                                                            Редактировать
+                                                        </a>
                                                         <form action="{{ url_for('auth.delete_token', token_id=token.id) }}" method="post" class="d-inline">
                                                             {{ form.csrf_token }}
                                                             <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите удалить этот токен?')">
