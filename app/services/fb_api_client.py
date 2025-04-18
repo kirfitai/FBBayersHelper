@@ -222,7 +222,7 @@ class FacebookAdClient:
             next_url = f'https://graph.facebook.com/v18.0/{campaign_id}/ads'
             params = {
                 'access_token': self.access_token,
-                'fields': 'id,name,status,creative,effective_status,delivery_info',
+                'fields': 'id,name,status,creative,effective_status',  # Удалено delivery_info, так как оно больше не поддерживается
                 'limit': 100  # Запрашиваем максимальное количество объявлений за раз
             }
             
@@ -335,7 +335,7 @@ class FacebookAdClient:
                 # Указываем больше полей для получения максимальной информации
                 ads = campaign.get_ads(fields=[
                     'id', 'name', 'status', 'creative', 'effective_status', 
-                    'delivery_info', 'adset_id', 'campaign_id', 'bid_amount'
+                    'adset_id', 'campaign_id', 'bid_amount'  # Удалено delivery_info, так как оно больше не поддерживается
                 ])
                 
                 logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_id} через SDK")
@@ -397,7 +397,7 @@ class FacebookAdClient:
                     ads_url = f'https://graph.facebook.com/v18.0/{adset_id}/ads'
                     ads_params = {
                         'access_token': self.access_token,
-                        'fields': 'id,name,status,creative,effective_status',
+                        'fields': 'id,name,status,creative,effective_status',  # Удалено delivery_info, так как оно больше не поддерживается
                         'limit': 100
                     }
                     
