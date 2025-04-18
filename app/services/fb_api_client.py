@@ -270,6 +270,31 @@ class FacebookAdClient:
                                 continue
                             return []
                     else:
+                        # Проверяем код ошибки на превышение лимита
+                        try:
+                            error_data = response.json().get('error', {})
+                            error_code = error_data.get('code')
+                            error_subcode = error_data.get('error_subcode')
+                            error_message = error_data.get('message', '')
+                            
+                            # Код 17 - User request limit reached, код 4 - Too many calls
+                            if error_code in [17, 4] or 'limit' in error_message.lower():
+                                logger.warning(f"[FacebookAdClient] Превышен лимит запросов к API: {error_message}")
+                                
+                                # Экспоненциальная задержка перед повторной попыткой
+                                wait_time = 5 * (2 ** (current_attempt - 1))  # 5, 10, 20 секунд
+                                logger.info(f"[FacebookAdClient] Ожидание {wait_time} секунд перед следующей попыткой из-за превышения лимита API")
+                                
+                                if current_attempt < max_attempts:
+                                    time.sleep(wait_time)
+                                    continue
+                                else:
+                                    logger.error("[FacebookAdClient] Превышено количество попыток для обхода ограничения API")
+                                    # Возвращаем пустой результат, так как все попытки не удались
+                                    return []
+                        except Exception as json_error:
+                            logger.error(f"[FacebookAdClient] Ошибка при обработке JSON-ответа: {str(json_error)}")
+                        
                         logger.error(f"[FacebookAdClient] Ошибка API {response.status_code}: {response.text}")
                         
                         # Пробуем еще раз при определенных ошибках
@@ -380,6 +405,31 @@ class FacebookAdClient:
                             # Возвращаем пустой результат с нулевыми значениями
                             return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
                     else:
+                        # Проверяем код ошибки на превышение лимита
+                        try:
+                            error_data = response.json().get('error', {})
+                            error_code = error_data.get('code')
+                            error_subcode = error_data.get('error_subcode')
+                            error_message = error_data.get('message', '')
+                            
+                            # Код 17 - User request limit reached, код 4 - Too many calls
+                            if error_code in [17, 4] or 'limit' in error_message.lower():
+                                logger.warning(f"[FacebookAdClient] Превышен лимит запросов к API: {error_message}")
+                                
+                                # Экспоненциальная задержка перед повторной попыткой
+                                wait_time = 5 * (2 ** (current_attempt - 1))  # 5, 10, 20 секунд
+                                logger.info(f"[FacebookAdClient] Ожидание {wait_time} секунд перед следующей попыткой из-за превышения лимита API")
+                                
+                                if current_attempt < max_attempts:
+                                    time.sleep(wait_time)
+                                    continue
+                                else:
+                                    logger.error("[FacebookAdClient] Превышено количество попыток для обхода ограничения API")
+                                    # Возвращаем пустой результат, так как все попытки не удались
+                                    return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
+                        except Exception as json_error:
+                            logger.error(f"[FacebookAdClient] Ошибка при обработке JSON-ответа: {str(json_error)}")
+                        
                         logger.error(f"[FacebookAdClient] Ошибка API {response.status_code}: {response.text}")
                         
                         # Пробуем еще раз при определенных ошибках
