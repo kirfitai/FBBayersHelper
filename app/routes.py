@@ -13,6 +13,9 @@ import logging
 from datetime import datetime
 import random
 import string
+from pathlib import Path
+import os
+import glob
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -494,6 +497,33 @@ def check_campaign_setup(id):
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
+        # Ищем последний отчет о проверке
+        json_pattern = str(Path('/data/disable_logs') / f"check_report_{campaign_setup.campaign_id}_*.json")
+        json_files = sorted(glob.glob(json_pattern), reverse=True)
+        
+        if json_files:
+            latest_report_file = json_files[0]
+            try:
+                with open(latest_report_file, 'r') as f:
+                    report_data = json.load(f)
+                    
+                # Возвращаем шаблон с отчётом
+                return render_template('campaigns/check_report.html',
+                                     title='Отчет о проверке кампании',
+                                     campaign_id=campaign_setup.campaign_id,
+                                     campaign_name=campaign_setup.campaign_name,
+                                     report_lines=report_data.get('report_lines', []),
+                                     date_range=report_data.get('date_range', ''),
+                                     period=report_data.get('period', ''),
+                                     total_ads=report_data.get('total_ads', 0),
+                                     successful_disabled=report_data.get('successful_disabled', 0),
+                                     failed_disabled=report_data.get('failed_disabled', 0),
+                                     skipped_ads=report_data.get('skipped_ads', 0),
+                                     timestamp=report_data.get('timestamp', ''))
+            except Exception as e:
+                logger.error(f"Ошибка при чтении отчета: {str(e)}")
+        
+        # Если нет файла отчета или произошла ошибка при чтении
         if result:
             flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно', 'success')
         else:

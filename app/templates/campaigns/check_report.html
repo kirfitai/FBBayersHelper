@@ -1,0 +1,122 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container">
+    <div class="card mb-4">
+        <div class="card-header d-flex justify-content-between align-items-center">
+            <h2>Отчет о проверке кампании</h2>
+            <a href="{{ url_for('main.campaigns') }}" class="btn btn-primary">Вернуться к списку</a>
+        </div>
+        <div class="card-body">
+            <div class="mb-3">
+                <h3>Информация о кампании</h3>
+                <div class="row">
+                    <div class="col-md-6">
+                        <p><strong>ID кампании:</strong> {{ campaign_id }}</p>
+                        <p><strong>Название:</strong> {{ campaign_name }}</p>
+                    </div>
+                    <div class="col-md-6">
+                        <p><strong>Период проверки:</strong> {{ period }}</p>
+                        <p><strong>Диапазон дат:</strong> {{ date_range }}</p>
+                        <p><strong>Время проверки:</strong> {{ timestamp }}</p>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <h3>Итоги проверки</h3>
+                <div class="row">
+                    <div class="col-md-3">
+                        <div class="card text-center bg-light">
+                            <div class="card-body">
+                                <h5 class="card-title">Всего объявлений</h5>
+                                <p class="card-text h2">{{ total_ads }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center text-white bg-success">
+                            <div class="card-body">
+                                <h5 class="card-title">Успешно отключено</h5>
+                                <p class="card-text h2">{{ successful_disabled }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center text-white bg-danger">
+                            <div class="card-body">
+                                <h5 class="card-title">Ошибки отключения</h5>
+                                <p class="card-text h2">{{ failed_disabled }}</p>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="card text-center text-white bg-info">
+                            <div class="card-body">
+                                <h5 class="card-title">Пропущено</h5>
+                                <p class="card-text h2">{{ skipped_ads }}</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="mb-3">
+                <h3>Подробный отчет</h3>
+                <div class="table-responsive">
+                    <table class="table table-striped table-bordered">
+                        <thead class="thead-dark">
+                            <tr>
+                                <th>ID объявления</th>
+                                <th>Название</th>
+                                <th>Статус</th>
+                                <th>Расход</th>
+                                <th>Конверсии</th>
+                                <th>Требуется</th>
+                                <th>Результат</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for line in report_lines %}
+                                {% if "ID объявления" in line %}
+                                    {% set parts = line.split() %}
+                                    {% if parts|length >= 7 %}
+                                        <tr>
+                                            <td>{{ parts[0] }}</td>
+                                            <td>{{ parts[1] }}</td>
+                                            <td>{{ parts[2] }}</td>
+                                            <td>{{ parts[3] }}</td>
+                                            <td>{{ parts[4] }}</td>
+                                            <td>{{ parts[5] }}</td>
+                                            <td>
+                                                {% if "ПРОШЛО" in line %}
+                                                    <span class="badge badge-success">ПРОШЛО</span>
+                                                {% elif "НЕ ПРОШЛО" in line %}
+                                                    <span class="badge badge-danger">НЕ ПРОШЛО</span>
+                                                {% elif "Неактивно" in line %}
+                                                    <span class="badge badge-info">Неактивно</span>
+                                                {% else %}
+                                                    {{ parts[6] }}
+                                                {% endif %}
+                                            </td>
+                                        </tr>
+                                    {% endif %}
+                                {% endif %}
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div class="card bg-light">
+                <div class="card-header">
+                    <h3>Полный лог проверки</h3>
+                </div>
+                <div class="card-body">
+                    <pre style="white-space: pre-wrap; max-height: 400px; overflow-y: auto;">{{ '\n'.join(report_lines) }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %} 

@@ -52,6 +52,7 @@ def calculate_date_range_for_period(check_period):
 def check_campaign_thresholds(campaign_id=None, check_period=None):
     """
     Проверяет пороги кампаний и отключает объявления в кампаниях, если пороги превышены.
+    Проверка выполняется для каждого объявления отдельно.
     
     Args:
         campaign_id (str, optional): ID кампании для проверки. По умолчанию проверяются все кампании.
@@ -62,6 +63,12 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
         bool: True если все проверки выполнены успешно, иначе False
     """
     try:
+        # Создаем строку для вывода отчета по проверке
+        report_output = []
+        report_output.append("=" * 80)
+        report_output.append("ОТЧЕТ ПО ПРОВЕРКЕ ОБЪЯВЛЕНИЙ")
+        report_output.append("=" * 80)
+        
         # Если campaign_id указан, проверяем только эту кампанию
         if campaign_id:
             campaign_setups = CampaignSetup.query.filter(
@@ -103,6 +110,15 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     logger.info(f"Нет порогов для настройки {setup.id}")
                     continue
                 
+                report_output.append(f"\nКампания: {campaign_setup.campaign_id} - {campaign_setup.campaign_name or 'Без имени'}")
+                report_output.append(f"Период проверки: {period}")
+                report_output.append(f"Диапазон дат: {since_date} - {until_date}")
+                
+                # Выводим информацию о порогах
+                report_output.append("\nНастроенные пороги:")
+                for i, threshold in enumerate(sorted(thresholds, key=lambda x: x['spend'])):
+                    report_output.append(f"  {i+1}. Расход: ${threshold['spend']}, Требуемые конверсии: {threshold['conversions']}")
+                
                 # Получаем пользователя
                 user = User.query.get(campaign_setup.user_id)
                 if not user:
@@ -127,30 +143,35 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     ad_account_id=token.account_id
                 )
                 
-                # Получаем статистику кампании
-                campaign_stats = fb_api.get_campaign_stats(
-                    campaign_id=campaign_setup.campaign_id,
-                    fields=['campaign_name', 'spend'],
-                    date_preset=None,
-                    time_range={'since': since_date, 'until': until_date}
-                )
+                # Получаем префиксы для отслеживания конверсий
+                ref_prefixes = setup.ref_prefixes.split(',') if hasattr(setup, 'ref_prefixes') and setup.ref_prefixes else []
+                ref_prefixes = [prefix.strip() for prefix in ref_prefixes if prefix.strip()]
                 
-                if not campaign_stats:
-                    logger.warning(f"Не удалось получить статистику для кампании {campaign_setup.campaign_id}")
+                if ref_prefixes:
+                    report_output.append(f"\nПрефиксы REF для отслеживания конверсий: {', '.join(ref_prefixes)}")
+                else:
+                    report_output.append("\nВнимание: префиксы REF не настроены!")
+                
+                # Получаем все объявления в кампании
+                ads = fb_api.get_ads_in_campaign(campaign_setup.campaign_id)
+                
+                if not ads:
+                    report_output.append("\nВ кампании не найдено объявлений")
                     continue
                 
-                # Получаем расходы
-                spend = float(campaign_stats.get('spend', 0))
+                report_output.append(f"\nНайдено {len(ads)} объявлений в кампании")
+                report_output.append("\nПРОВЕРКА ОБЪЯВЛЕНИЙ:")
+                report_output.append("-" * 80)
+                report_output.append(f"{'ID объявления':<20} {'Название':<20} {'Статус':<10} {'Расход':<10} {'Конверсии':<10} {'Требуется':<10} {'Результат':<10}")
+                report_output.append("-" * 80)
                 
-                # Получаем количество конверсий
-                conversion_count = 0  # Здесь нужно добавить логику получения конверсий
+                # Обновляем время последней проверки
+                campaign_setup.last_checked = datetime.utcnow()
+                db.session.commit()
                 
-                # Получаем конверсии за указанный период
+                # Получаем количество конверсий за период для этой кампании
+                campaign_conversions = 0
                 try:
-                    # Берем префиксы из настройки
-                    ref_prefixes = setup.ref_prefixes.split(',') if setup.ref_prefixes else []
-                    ref_prefixes = [prefix.strip() for prefix in ref_prefixes if prefix.strip()]
-                    
                     # Создаем фильтр для поиска конверсий по префиксам
                     conversion_filters = []
                     for prefix in ref_prefixes:
@@ -162,8 +183,8 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                         since_datetime = datetime.strptime(since_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0)
                         until_datetime = datetime.strptime(until_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
                         
-                        # Получаем количество конверсий
-                        conversion_count = Conversion.query.filter(
+                        # Получаем количество конверсий для кампании
+                        campaign_conversions = Conversion.query.filter(
                             and_(
                                 or_(*conversion_filters),
                                 Conversion.timestamp >= since_datetime,
@@ -171,108 +192,113 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                             )
                         ).count()
                         
-                        logger.info(f"Найдено {conversion_count} конверсий для префиксов {ref_prefixes} за период {since_date} - {until_date}")
                 except Exception as e:
                     logger.error(f"Ошибка при получении конверсий: {str(e)}")
                 
-                # Обновляем время последней проверки
-                campaign_setup.last_checked = datetime.utcnow()
-                db.session.commit()
+                report_output.append(f"Всего конверсий для кампании: {campaign_conversions}")
                 
-                # Проверяем, превышены ли пороги
-                should_disable_ads = False
+                # Проверяем каждое объявление отдельно
+                successful_disabled = 0
+                failed_disabled = 0
+                skipped_ads = 0
                 
-                # Сортируем пороги по расходам (по возрастанию)
-                sorted_thresholds = sorted(thresholds, key=lambda x: x['spend'])
-                
-                # Находим подходящий порог
-                applicable_threshold = None
-                for threshold in sorted_thresholds:
-                    if spend >= threshold['spend']:
-                        applicable_threshold = threshold
-                    else:
-                        break
-                
-                # Если нашли подходящий порог, проверяем условие
-                if applicable_threshold:
-                    required_conversions = applicable_threshold['conversions']
-                    if conversion_count < required_conversions:
-                        should_disable_ads = True
-                        logger.info(
-                            f"Порог превышен для кампании {campaign_setup.campaign_id}: "
-                            f"расходы ${spend:.2f}, конверсии {conversion_count}, "
-                            f"требуется минимум {required_conversions} конверсий при расходах ${applicable_threshold['spend']}"
-                        )
-                
-                # Если нужно отключить объявления
-                if should_disable_ads:
-                    try:
-                        # Получаем все объявления в кампании
-                        ads = fb_api.get_ads_in_campaign(campaign_setup.campaign_id)
-                        
-                        if ads:
-                            logger.info(f"Найдено {len(ads)} объявлений в кампании {campaign_setup.campaign_id} для отключения")
-                            
-                            successful_disables = 0
-                            failed_disables = 0
-                            
-                            # Отключаем каждое объявление
-                            for ad in ads:
-                                if hasattr(ad, 'id') and ad.id:
-                                    ad_id = ad.id
-                                    ad_name = getattr(ad, 'name', 'Неизвестное имя')
-                                    ad_status = getattr(ad, 'status', 'UNKNOWN')
-                                    
-                                    # Отключаем только активные объявления
-                                    if ad_status != 'PAUSED':
-                                        status = fb_api.disable_ad(ad_id)
-                                        if status:
-                                            successful_disables += 1
-                                            logger.info(f"Объявление {ad_id} ({ad_name}) успешно отключено")
-                                        else:
-                                            failed_disables += 1
-                                            logger.error(f"Ошибка при отключении объявления {ad_id} ({ad_name})")
-                                    else:
-                                        logger.info(f"Объявление {ad_id} ({ad_name}) уже отключено, пропускаем")
-                                        
-                            # Выводим итоговую статистику
-                            logger.info(
-                                f"Итого по кампании {campaign_setup.campaign_id}: "
-                                f"успешно отключено {successful_disables} объявлений, "
-                                f"не удалось отключить {failed_disables} объявлений"
-                            )
-                            
-                            # Записываем статистику в файл для последующего анализа
-                            import json
-                            from pathlib import Path
-                            try:
-                                log_dir = Path('/data/disable_logs')
-                                log_dir.mkdir(exist_ok=True)
-                                report = {
-                                    'timestamp': datetime.utcnow().isoformat(),
-                                    'campaign_id': campaign_setup.campaign_id,
-                                    'campaign_name': campaign_stats.get('campaign_name', 'Н/Д'),
-                                    'spend': spend,
-                                    'conversions': conversion_count,
-                                    'threshold': applicable_threshold,
-                                    'successful_disables': successful_disables,
-                                    'failed_disables': failed_disables
-                                }
-                                with open(log_dir / f"disable_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json", 'w') as f:
-                                    json.dump(report, f)
-                            except Exception as log_error:
-                                logger.error(f"Ошибка при создании отчета: {str(log_error)}")
+                for ad in ads:
+                    ad_id = getattr(ad, 'id', None)
+                    ad_name = getattr(ad, 'name', 'Неизвестное имя')
+                    ad_status = getattr(ad, 'status', 'UNKNOWN')
+                    
+                    if not ad_id:
+                        continue
+                    
+                    # Если объявление уже отключено, пропускаем его
+                    if ad_status != 'ACTIVE':
+                        report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} -{'':9} -{'':9} -{'':9} Неактивно")
+                        skipped_ads += 1
+                        continue
+                    
+                    # Получаем статистику объявления
+                    ad_stats = fb_api.get_ad_insights(ad_id, date_preset=None, time_range={'since': since_date, 'until': until_date})
+                    
+                    # Расход на объявление
+                    ad_spend = float(ad_stats.get('spend', 0))
+                    
+                    # Проверяем, превышены ли пороги
+                    should_disable = False
+                    required_conversions = 0
+                    
+                    # Сортируем пороги по расходам (по возрастанию)
+                    sorted_thresholds = sorted(thresholds, key=lambda x: x['spend'])
+                    
+                    # Находим подходящий порог для объявления
+                    applicable_threshold = None
+                    for threshold in sorted_thresholds:
+                        if ad_spend >= threshold['spend']:
+                            applicable_threshold = threshold
                         else:
-                            logger.warning(f"Не найдено объявлений в кампании {campaign_setup.campaign_id}")
-                    except Exception as ad_error:
-                        logger.error(f"Ошибка при отключении объявлений: {str(ad_error)}")
-                else:
-                    logger.info(
-                        f"Кампания {campaign_setup.campaign_id} в порядке. "
-                        f"Расходы: ${spend:.2f}, конверсии: {conversion_count}, "
-                        f"период: {period}"
-                    )
-            
+                            break
+                    
+                    # Если нашли подходящий порог, проверяем условие
+                    if applicable_threshold:
+                        required_conversions = applicable_threshold['conversions']
+                        if campaign_conversions < required_conversions:
+                            should_disable = True
+                    
+                    # Выводим информацию о проверке
+                    if should_disable:
+                        result = "НЕ ПРОШЛО"
+                        # Отключаем объявление
+                        disable_result = fb_api.disable_ad(ad_id)
+                        if disable_result:
+                            successful_disabled += 1
+                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
+                        else:
+                            failed_disabled += 1
+                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result} (ОШИБКА)")
+                    else:
+                        result = "ПРОШЛО"
+                        report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
+                
+                # Выводим итоговую статистику
+                report_output.append("-" * 80)
+                report_output.append(f"Итоги проверки: Успешно отключено {successful_disabled} объявлений, ошибки при отключении {failed_disabled} объявлений, пропущено {skipped_ads} объявлений")
+                report_output.append("=" * 80)
+                
+                # Записываем отчет в лог
+                logger.info("\n".join(report_output))
+                
+                # Записываем отчет в файл
+                try:
+                    from pathlib import Path
+                    import json
+                    
+                    log_dir = Path('/data/disable_logs')
+                    log_dir.mkdir(exist_ok=True)
+                    
+                    report_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.txt"
+                    with open(report_file, 'w') as f:
+                        f.write("\n".join(report_output))
+                        
+                    # Также сохраняем отчет в JSON для возможного использования в интерфейсе
+                    report_json = {
+                        'timestamp': datetime.utcnow().isoformat(),
+                        'campaign_id': campaign_setup.campaign_id,
+                        'campaign_name': campaign_setup.campaign_name,
+                        'report_lines': report_output,
+                        'successful_disabled': successful_disabled,
+                        'failed_disabled': failed_disabled,
+                        'skipped_ads': skipped_ads,
+                        'total_ads': len(ads),
+                        'period': period,
+                        'date_range': f"{since_date} - {until_date}"
+                    }
+                    
+                    json_file = log_dir / f"check_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json"
+                    with open(json_file, 'w') as f:
+                        json.dump(report_json, f)
+                        
+                except Exception as e:
+                    logger.error(f"Ошибка при сохранении отчета: {str(e)}")
+                
             except Exception as e:
                 logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
                 continue
