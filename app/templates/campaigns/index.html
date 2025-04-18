@@ -2,6 +2,22 @@
 
 {% block title %}Управление кампаниями - {{ super() }}{% endblock %}
 
+<style>
+    .campaign-actions .btn {
+        margin-right: 5px;
+    }
+    
+    .campaign-actions .check-btn {
+        background-color: #4285f4;
+        border-color: #4285f4;
+    }
+    
+    .campaign-actions .check-btn:hover {
+        background-color: #3367d6;
+        border-color: #3367d6;
+    }
+</style>
+
 {% block content %}
 <div class="row">
     <div class="col-md-12">
@@ -63,21 +79,27 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <div class="btn-group btn-group-sm">
-                                        <form method="POST" action="{{ url_for('main.toggle_campaign_setup', id=campaign_setup.id) }}">
+                                    <div class="btn-group btn-group-sm campaign-actions">
+                                        <form method="POST" action="{{ url_for('main.check_campaign_setup', id=campaign_setup.id) }}" class="d-inline">
                                             {{ form.csrf_token }}
-                                            <button type="submit" class="btn btn-warning me-1">
+                                            <button type="submit" class="btn btn-primary check-btn" title="Принудительная проверка">
+                                                <i class="fas fa-sync-alt"></i> Проверить
+                                            </button>
+                                        </form>
+                                        <form method="POST" action="{{ url_for('main.toggle_campaign_setup', id=campaign_setup.id) }}" class="d-inline">
+                                            {{ form.csrf_token }}
+                                            <button type="submit" class="btn btn-warning" title="{% if campaign_setup.is_active %}Деактивировать{% else %}Активировать{% endif %} кампанию">
                                                 {% if campaign_setup.is_active %}
-                                                Деактивировать
+                                                <i class="fas fa-pause"></i> Деактивировать
                                                 {% else %}
-                                                Активировать
+                                                <i class="fas fa-play"></i> Активировать
                                                 {% endif %}
                                             </button>
                                         </form>
-                                        <form method="POST" action="{{ url_for('main.delete_campaign_setup', id=campaign_setup.id) }}">
+                                        <form method="POST" action="{{ url_for('main.delete_campaign_setup', id=campaign_setup.id) }}" class="d-inline">
                                             {{ form.csrf_token }}
-                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены?')">
-                                                Удалить
+                                            <button type="submit" class="btn btn-danger" onclick="return confirm('Вы уверены, что хотите удалить эту кампанию?')" title="Удалить кампанию">
+                                                <i class="fas fa-trash"></i> Удалить
                                             </button>
                                         </form>
                                     </div>

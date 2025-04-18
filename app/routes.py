@@ -470,6 +470,40 @@ def toggle_campaign_setup(id):
     flash(f'Кампания {status}')
     return redirect(url_for('main.campaigns'))
 
+@bp.route('/campaigns/setup/<int:id>/check', methods=['POST'])
+@login_required
+def check_campaign_setup(id):
+    campaign_setup = CampaignSetup.query.filter_by(
+        id=id, user_id=current_user.id
+    ).first_or_404()
+    
+    logger.info(f"Запуск принудительной проверки для кампании {campaign_setup.campaign_id}")
+    
+    try:
+        # Импортируем функцию для проверки кампаний
+        from app.scheduler import check_campaign_thresholds
+        
+        # Получаем период проверки из связанного сетапа
+        setup = Setup.query.get(campaign_setup.setup_id)
+        check_period = setup.check_period if setup else None
+        
+        # Выполняем проверку
+        result = check_campaign_thresholds(campaign_setup.campaign_id, check_period)
+        
+        # Обновляем время последней проверки
+        campaign_setup.last_checked = datetime.utcnow()
+        db.session.commit()
+        
+        if result:
+            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно', 'success')
+        else:
+            flash(f'Проверка кампании выполнена с ошибками', 'warning')
+    except Exception as e:
+        logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
+        flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
+    
+    return redirect(url_for('main.campaigns'))
+
 @bp.route('/api/conversion/add', methods=['GET', 'POST'])
 def add_conversion():
     """API для добавления конверсии через GET или POST запросы"""
