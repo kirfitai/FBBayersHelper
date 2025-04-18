@@ -2,6 +2,8 @@
 
 {% block title %}Управление кампаниями - {{ super() }}{% endblock %}
 
+{% block styles %}
+{{ super() }}
 <style>
     .campaign-actions .btn {
         margin-right: 5px;
@@ -16,7 +18,41 @@
         background-color: #3367d6;
         border-color: #3367d6;
     }
+    
+    .campaign-row {
+        cursor: pointer;
+    }
+    
+    .campaign-row:hover {
+        background-color: #f8f9fa;
+    }
+    
+    .campaign-details {
+        display: none;
+        background-color: #f8f9fa;
+    }
+    
+    .campaign-details.active {
+        display: table-row;
+    }
+    
+    .details-container {
+        padding: 15px;
+    }
+    
+    .details-badge {
+        font-size: 0.9em;
+    }
+    
+    .toggle-icon {
+        transition: transform 0.2s;
+    }
+    
+    .toggle-icon.rotated {
+        transform: rotate(90deg);
+    }
 </style>
+{% endblock %}
 
 {% block content %}
 <div class="row">
@@ -60,8 +96,13 @@
                         </thead>
                         <tbody>
                             {% for campaign_setup in campaign_setups %}
-                            <tr>
-                                <td>{{ campaign_setup.campaign_name or campaign_setup.campaign_id }}</td>
+                            <tr class="campaign-row" data-campaign-id="{{ campaign_setup.id }}">
+                                <td>
+                                    <span class="d-flex align-items-center">
+                                        <i class="fas fa-chevron-right toggle-icon me-2"></i>
+                                        {{ campaign_setup.campaign_name or campaign_setup.campaign_id }}
+                                    </span>
+                                </td>
                                 <td>{{ campaign_setup.setup.name }}</td>
                                 <td>{{ campaign_setup.setup.check_interval }} мин</td>
                                 <td>
@@ -105,6 +146,21 @@
                                     </div>
                                 </td>
                             </tr>
+                            <tr class="campaign-details" id="details-{{ campaign_setup.id }}">
+                                <td colspan="6">
+                                    <div class="details-container">
+                                        <div id="campaign-report-{{ campaign_setup.id }}" class="report-container">
+                                            {% if session.check_campaign_id == campaign_setup.campaign_id and session.check_details_html %}
+                                                {{ session.check_details_html|safe }}
+                                            {% else %}
+                                                <div class="alert alert-info">
+                                                    Нажмите "Проверить", чтобы увидеть отчет о проверке объявлений.
+                                                </div>
+                                            {% endif %}
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -119,4 +175,51 @@
         {% endif %}
     </div>
 </div>
+
+{% endblock %}
+
+{% block javascript %}
+{{ super() }}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        // Обработка клика по строке кампании
+        const campaignRows = document.querySelectorAll('.campaign-row');
+        
+        campaignRows.forEach(function(row) {
+            row.addEventListener('click', function(e) {
+                // Пропускаем клик, если он был по кнопке или форме
+                if (e.target.closest('button') || e.target.closest('form')) {
+                    return;
+                }
+                
+                const campaignId = this.getAttribute('data-campaign-id');
+                const detailsRow = document.getElementById('details-' + campaignId);
+                const toggleIcon = this.querySelector('.toggle-icon');
+                
+                // Переключаем видимость строки с деталями
+                if (detailsRow.classList.contains('active')) {
+                    detailsRow.classList.remove('active');
+                    toggleIcon.classList.remove('fa-chevron-down');
+                    toggleIcon.classList.add('fa-chevron-right');
+                } else {
+                    // Закрываем все открытые строки
+                    document.querySelectorAll('.campaign-details.active').forEach(function(openRow) {
+                        openRow.classList.remove('active');
+                        const openRowId = openRow.id.split('-')[1];
+                        const openRowIcon = document.querySelector('[data-campaign-id="' + openRowId + '"] .toggle-icon');
+                        if (openRowIcon) {
+                            openRowIcon.classList.remove('fa-chevron-down');
+                            openRowIcon.classList.add('fa-chevron-right');
+                        }
+                    });
+                    
+                    // Открываем текущую строку
+                    detailsRow.classList.add('active');
+                    toggleIcon.classList.remove('fa-chevron-right');
+                    toggleIcon.classList.add('fa-chevron-down');
+                }
+            });
+        });
+    });
+</script>
 {% endblock %}

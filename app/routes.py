@@ -498,28 +498,29 @@ def check_campaign_setup(id):
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
-        # Формируем HTML-таблицу с результатами
+        # Формируем HTML-таблицу с результатами для сохранения в сессии
         if ads_results:
             # Верхняя часть таблицы
             html_details = """
-            <div class="container mt-3">
-                <div class="alert alert-info">
-                    <strong>Результаты проверки объявлений:</strong>
+            <div class="card">
+                <div class="card-header bg-primary text-white">
+                    <h5 class="mb-0">Результаты последней проверки</h5>
                 </div>
-                <div class="table-responsive">
-                    <table class="table table-striped table-sm">
-                        <thead class="thead-dark">
-                            <tr>
-                                <th>ID объявления</th>
-                                <th>Название</th>
-                                <th>Статус</th>
-                                <th>Расход ($)</th>
-                                <th>Конверсии</th>
-                                <th>Требуется</th>
-                                <th>Результат</th>
-                            </tr>
-                        </thead>
-                        <tbody>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-sm">
+                            <thead class="thead-dark">
+                                <tr>
+                                    <th>ID объявления</th>
+                                    <th>Название</th>
+                                    <th>Статус</th>
+                                    <th>Расход ($)</th>
+                                    <th>Конверсии</th>
+                                    <th>Требуется</th>
+                                    <th>Результат</th>
+                                </tr>
+                            </thead>
+                            <tbody>
             """
             
             # Строки таблицы с данными по каждому объявлению
@@ -551,44 +552,45 @@ def check_campaign_setup(id):
             skipped_ads = sum(1 for ad in ads_results if ad.get('status') != 'ACTIVE')
             
             html_details += """
-                        </tbody>
-                    </table>
-                </div>
-                
-                <div class="row mt-3">
+                            </tbody>
+                        </table>
+                    </div>
+                    
+                    <div class="row mt-3">
             """
             
             # Карточки с итогами
             html_details += f"""
-                    <div class="col-md-3">
-                        <div class="card bg-light">
-                            <div class="card-body p-2 text-center">
-                                <h6 class="card-title">Всего объявлений</h6>
-                                <p class="card-text lead">{len(ads_results)}</p>
+                        <div class="col-md-3">
+                            <div class="card bg-light">
+                                <div class="card-body p-2 text-center">
+                                    <h6 class="card-title">Всего объявлений</h6>
+                                    <p class="card-text lead">{len(ads_results)}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-success text-white">
-                            <div class="card-body p-2 text-center">
-                                <h6 class="card-title">Отключено успешно</h6>
-                                <p class="card-text lead">{successful_disabled}</p>
+                        <div class="col-md-3">
+                            <div class="card bg-success text-white">
+                                <div class="card-body p-2 text-center">
+                                    <h6 class="card-title">Отключено успешно</h6>
+                                    <p class="card-text lead">{successful_disabled}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-danger text-white">
-                            <div class="card-body p-2 text-center">
-                                <h6 class="card-title">Ошибки отключения</h6>
-                                <p class="card-text lead">{failed_disabled}</p>
+                        <div class="col-md-3">
+                            <div class="card bg-danger text-white">
+                                <div class="card-body p-2 text-center">
+                                    <h6 class="card-title">Ошибки отключения</h6>
+                                    <p class="card-text lead">{failed_disabled}</p>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <div class="col-md-3">
-                        <div class="card bg-info text-white">
-                            <div class="card-body p-2 text-center">
-                                <h6 class="card-title">Пропущено</h6>
-                                <p class="card-text lead">{skipped_ads}</p>
+                        <div class="col-md-3">
+                            <div class="card bg-info text-white">
+                                <div class="card-body p-2 text-center">
+                                    <h6 class="card-title">Пропущено</h6>
+                                    <p class="card-text lead">{skipped_ads}</p>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -596,9 +598,12 @@ def check_campaign_setup(id):
             </div>
             """
             
-            # Отображаем результаты прямо в сообщении flash
-            flash(Markup(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно.') + 
-                  Markup(html_details), 'success')
+            # Сохраняем HTML с результатами в сессии
+            session['check_details_html'] = html_details
+            session['check_campaign_id'] = campaign_setup.campaign_id
+            
+            # Отображаем успешное сообщение с инструкцией
+            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно. Нажмите на строку кампании, чтобы увидеть подробные результаты.', 'success')
         else:
             flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'success')
     except Exception as e:
