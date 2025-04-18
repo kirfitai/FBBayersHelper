@@ -3,12 +3,16 @@ import requests
 import logging
 import json
 import time
+import traceback
 from facebook_business.api import FacebookAdsApi
 from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.campaign import Campaign
 from facebook_business.adobjects.adset import AdSet
 from facebook_business.adobjects.ad import Ad
 from types import SimpleNamespace
+
+# Определение базового URL для Graph API
+FB_GRAPH_URL = 'https://graph.facebook.com/v18.0'
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -201,11 +205,11 @@ class FacebookAdClient:
     def get_ads_in_campaign(self, campaign_id, timeout=120):
         """
         Получение объявлений в кампании
-
+        
         Args:
             campaign_id (str): ID кампании
             timeout (int): Таймаут для запроса в секундах
-
+            
         Returns:
             list: Список объявлений в кампании или пустой список при ошибке
         """
@@ -299,7 +303,7 @@ class FacebookAdClient:
     def get_ad_insights(self, ad_id, date_preset='today', time_range=None, fields=None, timeout=120):
         """
         Получение статистики по объявлению
-
+        
         Args:
             ad_id (str): ID объявления
             date_preset (str): Предустановленный период (today, yesterday, last_7d, last_28d, last_30d, last_90d, last_month, this_month)
@@ -318,7 +322,7 @@ class FacebookAdClient:
             
             # Определяем необходимые поля
             if fields is None:
-                fields = ['spend', 'unique_actions']
+                fields = ['spend']
                 
             while current_attempt < max_attempts:
                 try:
@@ -340,27 +344,27 @@ class FacebookAdClient:
                     else:
                         params['date_preset'] = date_preset
                         
-                    # Делаем запрос с увеличенным таймаутом
+                    # Делаем GET запрос с увеличенным таймаутом
                     response = requests.get(url, params=params, timeout=current_timeout)
                     
                     if response.status_code == 200:
                         data = response.json()
-                        insights = data.get('data', [])
+                        insights_data = data.get('data', [])
                         
-                        if insights and len(insights) > 0:
+                        if insights_data and len(insights_data) > 0:
                             # Обрабатываем результаты
                             result = {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
                             
                             # Извлекаем расходы
-                            if 'spend' in insights[0]:
-                                result['spend'] = float(insights[0]['spend'])
+                            if 'spend' in insights_data[0]:
+                                result['spend'] = float(insights_data[0]['spend'])
                                 
-                            # Извлекаем конверсии
-                            if 'unique_actions' in insights[0]:
-                                for action in insights[0]['unique_actions']:
-                                    if action.get('action_type') == 'offsite_conversion.fb_pixel_purchase':
-                                        result['conversions'] = int(action.get('value', 0))
-                                        break
+                            # Проверяем действия и считаем конверсии если есть
+                            if 'actions' in insights_data[0]:
+                                conversion_types = ['purchase', 'web_in_store_purchase', 'onsite_web_app_purchase']
+                                for action in insights_data[0]['actions']:
+                                    if action.get('action_type') in conversion_types:
+                                        result['conversions'] += int(action.get('value', 0))
                                         
                             logger.info(f"[FacebookAdClient] Получены данные статистики: {result}")
                             return result
