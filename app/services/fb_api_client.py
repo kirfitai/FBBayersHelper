@@ -226,17 +226,25 @@ class FacebookAdClient:
                 'limit': 100  # Запрашиваем максимальное количество объявлений за раз
             }
             
-            while next_url:
+            logger.info(f"Начальный URL для запроса объявлений: {next_url}")
+            logger.info(f"Параметры запроса: fields={params['fields']}, limit={params['limit']}")
+            
+            request_count = 0
+            while next_url and request_count < 10:  # Ограничиваем до 10 запросов для безопасности
                 try:
-                    logger.info(f"Запрос URL: {next_url.split('?')[0]} (с параметрами)")
+                    request_count += 1
+                    logger.info(f"Запрос #{request_count} для получения объявлений: {next_url.split('?')[0]}")
                     
                     if '?' in next_url:
                         # Если next_url уже содержит параметры, не используем params
+                        logger.info(f"Используем URL с параметрами из пагинации")
                         response = requests.get(next_url, timeout=timeout)
                     else:
                         # Иначе используем исходные параметры
+                        logger.info(f"Используем URL с нашими параметрами")
                         response = requests.get(next_url, params=params, timeout=timeout)
                     
+                    logger.info(f"Статус ответа: {response.status_code}")
                     if response.status_code != 200:
                         error_msg = f"Ошибка API при получении объявлений: {response.status_code} - {response.text}"
                         logger.warning(error_msg)
@@ -254,8 +262,14 @@ class FacebookAdClient:
                     
                     if not ads_data:
                         logger.warning(f"Ответ API не содержит объявлений для кампании {campaign_id}")
+                        logger.info(f"Полный ответ API: {json.dumps(data)[:500]}...")
                         
                     logger.info(f"Получено {len(ads_data)} объявлений на странице через прямой API запрос")
+                    
+                    # Выводим первые 2 объявления для отладки
+                    if ads_data and len(ads_data) > 0:
+                        for i, ad_data in enumerate(ads_data[:2]):
+                            logger.info(f"Пример объявления #{i+1}: {json.dumps(ad_data)[:200]}...")
                     
                     for ad_data in ads_data:
                         # Создаем объект Ad, чтобы совместимость с остальным кодом
@@ -276,6 +290,8 @@ class FacebookAdClient:
                     if not next_url:
                         logger.info("Достигнут конец пагинации, больше страниц нет")
                         break
+                    else:
+                        logger.info(f"Обнаружена следующая страница: {next_url[:100]}...")
                         
                 except requests.exceptions.Timeout:
                     logger.warning(f"Таймаут при запросе объявлений для кампании {campaign_id}")
@@ -292,6 +308,12 @@ class FacebookAdClient:
                 
                 logger.info(f"Всего получено {len(all_ads)} объявлений для кампании {campaign_id} через прямой API запрос")
                 logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
+                
+                # Проверяем типы первых объявлений
+                if all_ads:
+                    for i, ad in enumerate(all_ads[:2]):
+                        logger.info(f"Тип возвращаемого объявления #{i+1}: {type(ad)}, id: {getattr(ad, 'id', 'Нет ID')}")
+                
                 return all_ads
                 
         except Exception as api_error:
@@ -309,6 +331,7 @@ class FacebookAdClient:
             campaign.api = self.api  # Устанавливаем API
             
             try:
+                logger.info("Запрос объявлений через SDK...")
                 # Указываем больше полей для получения максимальной информации
                 ads = campaign.get_ads(fields=[
                     'id', 'name', 'status', 'creative', 'effective_status', 
@@ -325,6 +348,10 @@ class FacebookAdClient:
                 
                 if not ads:
                     logger.warning(f"SDK вернул пустой список объявлений для кампании {campaign_id}")
+                else:
+                    # Выводим типы первых объявлений
+                    for i, ad in enumerate(ads[:2]):
+                        logger.info(f"Пример объявления SDK #{i+1}: {type(ad)}, id: {ad.get('id', 'Нет ID')}")
                 
                 return ads
                 
@@ -350,13 +377,17 @@ class FacebookAdClient:
                 'limit': 100
             }
             
+            logger.info(f"URL для запроса групп объявлений: {adsets_url}")
             adsets_response = requests.get(adsets_url, params=adsets_params, timeout=timeout)
             
+            logger.info(f"Статус ответа для групп объявлений: {adsets_response.status_code}")
             if adsets_response.status_code == 200:
                 adsets_data = adsets_response.json()
                 adsets = adsets_data.get('data', [])
                 
                 logger.info(f"Получено {len(adsets)} групп объявлений для кампании {campaign_id}")
+                if adsets:
+                    logger.info(f"Пример группы объявлений: {json.dumps(adsets[0])[:200]}...")
                 
                 # Получаем объявления для каждой группы объявлений
                 for adset in adsets:
@@ -371,8 +402,10 @@ class FacebookAdClient:
                     }
                     
                     try:
+                        logger.info(f"URL для запроса объявлений группы: {ads_url}")
                         ads_response = requests.get(ads_url, params=ads_params, timeout=timeout)
                         
+                        logger.info(f"Статус ответа для объявлений группы: {ads_response.status_code}")
                         if ads_response.status_code == 200:
                             ads_data = ads_response.json()
                             ads_from_adset = ads_data.get('data', [])

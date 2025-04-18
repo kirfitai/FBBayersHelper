@@ -84,6 +84,17 @@ class FacebookAPI:
                 ads = self.client.get_ads_in_campaign(campaign_id, timeout=timeout)
                 
                 # Проверяем, получили ли мы объявления
+                if ads is None:
+                    logger.error(f"FacebookAPI: Результат вызова get_ads_in_campaign равен None для кампании {campaign_id}")
+                    current_retry += 1
+                    if current_retry < max_retries:
+                        logger.info(f"FacebookAPI: Ожидание {retry_delay} секунд перед следующей попыткой...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"FacebookAPI: Все попытки исчерпаны, объявления не получены (результат None)")
+                        return []
+                
                 if not ads:
                     logger.warning(f"FacebookAPI: Не получены объявления для кампании {campaign_id} в попытке {current_retry+1}")
                     current_retry += 1
@@ -97,20 +108,28 @@ class FacebookAPI:
                     
                 logger.info(f"FacebookAPI: Получено {len(ads)} объявлений для кампании {campaign_id}")
                 
+                # Выводим типы первых 3-х объявлений для отладки
+                for i, ad in enumerate(ads[:3]):
+                    logger.info(f"FacebookAPI: Объявление {i+1} - Тип: {type(ad)}, имеет атрибуты: id={hasattr(ad, 'id')}, status={hasattr(ad, 'status')}, name={hasattr(ad, 'name')}")
+                
                 # Убеждаемся, что объекты объявлений содержат все необходимые атрибуты
                 for ad in ads:
                     # Проверяем наличие атрибута status, если его нет - устанавливаем значение по умолчанию
                     if not hasattr(ad, 'status') and hasattr(ad, 'effective_status'):
+                        logger.info(f"FacebookAPI: Устанавливаем status из effective_status для объявления {getattr(ad, 'id', 'неизвестный id')}")
                         setattr(ad, 'status', getattr(ad, 'effective_status'))
                     elif not hasattr(ad, 'status'):
+                        logger.info(f"FacebookAPI: Устанавливаем status=UNKNOWN для объявления {getattr(ad, 'id', 'неизвестный id')}")
                         setattr(ad, 'status', 'UNKNOWN')
                         
                     # Проверяем наличие атрибута id
                     if not hasattr(ad, 'id') and hasattr(ad, '_data') and 'id' in ad._data:
+                        logger.info(f"FacebookAPI: Устанавливаем id из _data для объявления")
                         setattr(ad, 'id', ad._data['id'])
                     
                     # Проверяем наличие атрибута name
                     if not hasattr(ad, 'name') and hasattr(ad, '_data') and 'name' in ad._data:
+                        logger.info(f"FacebookAPI: Устанавливаем name из _data для объявления {getattr(ad, 'id', 'неизвестный id')}")
                         setattr(ad, 'name', ad._data['name'])
                         
                 # Возвращаем список объявлений
@@ -123,6 +142,8 @@ class FacebookAPI:
             except Exception as e:
                 current_retry += 1
                 logger.error(f"FacebookAPI: Ошибка при получении объявлений (попытка {current_retry}/{max_retries}): {str(e)}")
+                import traceback
+                logger.error(f"FacebookAPI: Трассировка ошибки: {traceback.format_exc()}")
                 if current_retry < max_retries:
                     logger.info(f"FacebookAPI: Ожидание {retry_delay} секунд перед следующей попыткой...")
                     time.sleep(retry_delay)
