@@ -52,4 +52,45 @@ class FacebookAPI:
         return self.client.update_campaign_status(
             campaign_id=campaign_id,
             status=status
-        ) 
+        )
+        
+    def get_ads_in_campaign(self, campaign_id):
+        """
+        Получение объявлений в кампании (перенаправление в FacebookAdClient)
+        
+        Args:
+            campaign_id (str): ID кампании
+            
+        Returns:
+            list: Список объектов объявлений
+        """
+        logger.info(f"FacebookAPI: Запрос объявлений для кампании {campaign_id}")
+        return self.client.get_ads_in_campaign(campaign_id)
+    
+    def get_ad_insights(self, ad_id, date_preset=None, time_range=None):
+        """
+        Получение статистики по объявлению (перенаправление в FacebookAdClient)
+        
+        Args:
+            ad_id (str): ID объявления
+            date_preset (str, optional): Предустановленный период ('today', 'yesterday', etc.)
+            time_range (dict, optional): Кастомный период времени {'since': 'YYYY-MM-DD', 'until': 'YYYY-MM-DD'}
+            
+        Returns:
+            dict: Данные статистики
+        """
+        logger.info(f"FacebookAPI: Запрос инсайтов для объявления {ad_id}")
+        return self.client.get_ad_insights(ad_id, date_preset, time_range)
+    
+    def disable_ad(self, ad_id):
+        """
+        Отключение объявления (перенаправление в FacebookAdClient)
+        
+        Args:
+            ad_id (str): ID объявления
+            
+        Returns:
+            bool: Успешность операции
+        """
+        logger.info(f"FacebookAPI: Отключение объявления {ad_id}")
+        return self.client.disable_ad(ad_id) 
