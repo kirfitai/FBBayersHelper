@@ -206,44 +206,124 @@ class FacebookAdClient:
         Returns:
             list: Список объектов объявлений
         """
+        logger.info(f"Запрос объявлений для кампании {campaign_id}")
+        all_ads = []
+        
+        # Пробуем сначала использовать прямой API запрос с пагинацией
         try:
-            campaign = Campaign(campaign_id)
-            ads = campaign.get_ads(fields=['id', 'name', 'status', 'creative'])
-            logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_id}")
-            return ads
-        except Exception as e:
-            logger.error(f"Ошибка при получении объявлений для кампании {campaign_id}: {str(e)}")
-            # В случае ошибки пробуем прямой запрос
-            try:
-                response = requests.get(
-                    f'https://graph.facebook.com/v18.0/{campaign_id}/ads',
-                    params={
-                        'access_token': self.access_token,
-                        'fields': 'id,name,status,creative'
-                    },
-                    timeout=30
-                )
-                
-                if response.status_code == 200:
-                    data = response.json()
-                    ads_data = data.get('data', [])
-                    logger.info(f"Получено {len(ads_data)} объявлений через прямой запрос")
-                    
-                    # Преобразуем в формат, ожидаемый приложением
-                    ads = []
-                    for ad_data in ads_data:
-                        ad = Ad(ad_data.get('id'))
-                        for key, value in ad_data.items():
-                            setattr(ad, key, value)
-                        ads.append(ad)
-                    
-                    return ads
+            next_url = f'https://graph.facebook.com/v18.0/{campaign_id}/ads'
+            params = {
+                'access_token': self.access_token,
+                'fields': 'id,name,status,creative,effective_status,delivery_info',
+                'limit': 100  # Запрашиваем максимальное количество объявлений за раз
+            }
+            
+            while next_url:
+                if '?' in next_url:
+                    # Если next_url уже содержит параметры, не используем params
+                    response = requests.get(next_url, timeout=30)
                 else:
-                    logger.error(f"Ошибка API: {response.status_code} - {response.text}")
-                    return []
-            except Exception as api_error:
-                logger.error(f"Ошибка при прямом запросе объявлений: {str(api_error)}")
-                return []
+                    # Иначе используем исходные параметры
+                    response = requests.get(next_url, params=params, timeout=30)
+                
+                if response.status_code != 200:
+                    error_msg = f"Ошибка API при получении объявлений: {response.status_code} - {response.text}"
+                    logger.warning(error_msg)
+                    break
+                
+                data = response.json()
+                ads_data = data.get('data', [])
+                logger.info(f"Получено {len(ads_data)} объявлений на странице через прямой API запрос")
+                
+                for ad_data in ads_data:
+                    # Создаем объект Ad, чтобы совместимость с остальным кодом
+                    from facebook_business.adobjects.ad import Ad
+                    ad = Ad(ad_data.get('id'))
+                    
+                    # Копируем все данные из ответа API в атрибуты объекта
+                    for key, value in ad_data.items():
+                        setattr(ad, key, value)
+                    
+                    all_ads.append(ad)
+                
+                # Проверяем наличие следующей страницы
+                paging = data.get('paging', {})
+                next_url = paging.get('next')
+                
+                if not next_url:
+                    break
+            
+            # Если получили объявления через прямой API, возвращаем их
+            if all_ads:
+                active_count = sum(1 for ad in all_ads if getattr(ad, 'status', None) == 'ACTIVE')
+                paused_count = sum(1 for ad in all_ads if getattr(ad, 'status', None) == 'PAUSED')
+                
+                logger.info(f"Всего получено {len(all_ads)} объявлений для кампании {campaign_id} через прямой API запрос")
+                logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
+                return all_ads
+                
+        except Exception as api_error:
+            logger.warning(f"Ошибка при получении объявлений через прямой API: {str(api_error)}")
+        
+        # Если прямой API запрос не сработал, пробуем через SDK
+        try:
+            from facebook_business.adobjects.campaign import Campaign
+            
+            campaign = Campaign(campaign_id)
+            campaign.api = self.api  # Устанавливаем API
+            
+            ads = campaign.get_ads(fields=['id', 'name', 'status', 'creative', 'effective_status', 'delivery_info'])
+            
+            logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_id} через SDK")
+            
+            # Подсчитываем количество активных и отключенных объявлений
+            active_count = sum(1 for ad in ads if ad.get('status') == 'ACTIVE')
+            paused_count = sum(1 for ad in ads if ad.get('status') == 'PAUSED')
+            
+            logger.info(f"Активных объявлений: {active_count}, отключенных: {paused_count}")
+            
+            return ads
+            
+        except Exception as e:
+            logger.error(f"Ошибка при получении объявлений для кампании {campaign_id} через SDK: {str(e)}")
+            
+            # Если и это не сработало, последняя попытка
+            try:
+                import urllib.request
+                import urllib.parse
+                import json
+                
+                url = f'https://graph.facebook.com/v18.0/{campaign_id}/ads?access_token={self.access_token}&fields=id,name,status,creative&limit=100'
+                
+                try:
+                    with urllib.request.urlopen(url, timeout=30) as response:
+                        response_data = response.read().decode('utf-8')
+                        data = json.loads(response_data)
+                        ads_data = data.get('data', [])
+                        
+                        # Преобразуем в объекты Ad
+                        from facebook_business.adobjects.ad import Ad
+                        ads = []
+                        for ad_data in ads_data:
+                            ad = Ad(ad_data.get('id'))
+                            for key, value in ad_data.items():
+                                setattr(ad, key, value)
+                            ads.append(ad)
+                            
+                        logger.info(f"Получено {len(ads)} объявлений через низкоуровневый API запрос")
+                        return ads
+                        
+                except urllib.error.HTTPError as e:
+                    logger.error(f"Ошибка HTTP при низкоуровневом запросе: {e.code} - {e.reason}")
+                except urllib.error.URLError as e:
+                    logger.error(f"Ошибка URL при низкоуровневом запросе: {e.reason}")
+                    
+            except Exception as low_level_error:
+                logger.error(f"Ошибка при низкоуровневом запросе объявлений: {str(low_level_error)}")
+                
+            # Если все методы не сработали, возвращаем пустой список
+            logger.error(f"Не удалось получить объявления для кампании {campaign_id}, возвращаем пустой список")
+            return []
     
     def get_ad_insights(self, ad_id, date_preset='today'):
         """
@@ -339,8 +419,37 @@ class FacebookAdClient:
         Returns:
             bool: Результат операции
         """
+        logger.info(f"Попытка отключения объявления {ad_id}")
+        
+        # Сначала проверяем текущий статус объявления
         try:
-            # Сначала пробуем прямой API запрос
+            # Получаем информацию о текущем статусе объявления
+            ad_info_response = requests.get(
+                f'https://graph.facebook.com/v18.0/{ad_id}',
+                params={
+                    'access_token': self.access_token,
+                    'fields': 'status,name'
+                },
+                timeout=30
+            )
+            
+            if ad_info_response.status_code == 200:
+                ad_info = ad_info_response.json()
+                current_status = ad_info.get('status')
+                ad_name = ad_info.get('name', 'Неизвестное имя')
+                
+                if current_status == 'PAUSED':
+                    logger.info(f"Объявление {ad_id} ({ad_name}) уже отключено (статус: {current_status})")
+                    return True
+                
+                logger.info(f"Текущий статус объявления {ad_id} ({ad_name}): {current_status}")
+            else:
+                logger.warning(f"Не удалось получить информацию об объявлении {ad_id}: {ad_info_response.status_code} - {ad_info_response.text}")
+        except Exception as e:
+            logger.warning(f"Ошибка при проверке статуса объявления {ad_id}: {str(e)}")
+        
+        # Пробуем отключить объявление через прямой API запрос
+        try:
             response = requests.post(
                 f'https://graph.facebook.com/v18.0/{ad_id}',
                 params={
@@ -352,9 +461,53 @@ class FacebookAdClient:
             
             if response.status_code == 200:
                 logger.info(f"Объявление {ad_id} отключено через прямой API запрос")
+                
+                # Проверяем, что объявление действительно отключено
+                try:
+                    verification_response = requests.get(
+                        f'https://graph.facebook.com/v18.0/{ad_id}',
+                        params={
+                            'access_token': self.access_token,
+                            'fields': 'status'
+                        },
+                        timeout=30
+                    )
+                    
+                    if verification_response.status_code == 200:
+                        verification_data = verification_response.json()
+                        if verification_data.get('status') == 'PAUSED':
+                            logger.info(f"Подтверждено отключение объявления {ad_id}")
+                            return True
+                        else:
+                            logger.warning(f"Объявление {ad_id} не было отключено, текущий статус: {verification_data.get('status')}")
+                    else:
+                        logger.warning(f"Не удалось проверить статус объявления после отключения: {verification_response.status_code}")
+                except Exception as ve:
+                    logger.warning(f"Ошибка при проверке статуса после отключения: {str(ve)}")
+                
+                # Если не смогли проверить, но запрос прошел успешно, считаем что объявление отключено
                 return True
             else:
-                logger.warning(f"Ошибка API при отключении объявления: {response.status_code} - {response.text}")
+                error_message = response.text
+                logger.warning(f"Ошибка API при отключении объявления: {response.status_code} - {error_message}")
+                
+                # Анализируем ошибку
+                try:
+                    error_data = response.json()
+                    error_code = error_data.get('error', {}).get('code')
+                    error_message = error_data.get('error', {}).get('message')
+                    
+                    if error_code == 190:
+                        logger.error(f"Ошибка авторизации (недействительный токен): {error_message}")
+                    elif error_code == 10:
+                        logger.error(f"Превышен лимит запросов API: {error_message}")
+                    elif error_code == 100:
+                        logger.error(f"Объявление не найдено: {error_message}")
+                    else:
+                        logger.error(f"Ошибка Facebook API (код {error_code}): {error_message}")
+                except Exception:
+                    logger.error(f"Не удалось распознать ошибку: {error_message}")
+                
                 # Продолжаем и пробуем через SDK
         except Exception as api_error:
             logger.warning(f"Ошибка при прямом запросе на отключение: {str(api_error)}")
@@ -362,14 +515,188 @@ class FacebookAdClient:
         
         # Если прямой API запрос не сработал, пробуем через SDK
         try:
+            from facebook_business.adobjects.ad import Ad
+            
             ad = Ad(ad_id)
+            ad.api = self.api  # Устанавливаем API
+            
             result = ad.api_update(
                 params={
-                    'status': Ad.Status.paused,
+                    'status': 'PAUSED',
                 }
             )
-            logger.info(f"Объявление {ad_id} отключено через SDK")
+            
+            if result:
+                logger.info(f"Объявление {ad_id} отключено через SDK")
+                return True
+            else:
+                logger.error(f"Не удалось отключить объявление {ad_id} через SDK")
+                return False
+        except Exception as e:
+            logger.error(f"Ошибка при отключении объявления {ad_id} через SDK: {str(e)}")
+            
+            # Последняя попытка - попробуем использовать низкоуровневый API запрос
+            try:
+                import urllib.request
+                import urllib.parse
+                import urllib.error
+                
+                url = f'https://graph.facebook.com/v18.0/{ad_id}?access_token={self.access_token}&status=PAUSED'
+                req = urllib.request.Request(url, method='POST')
+                
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as response:
+                        response_data = response.read().decode('utf-8')
+                        logger.info(f"Объявление {ad_id} отключено через низкоуровневый API запрос: {response_data}")
+                        return True
+                except urllib.error.HTTPError as e:
+                    logger.error(f"Ошибка HTTP при низкоуровневом запросе: {e.code} - {e.reason}")
+                except urllib.error.URLError as e:
+                    logger.error(f"Ошибка URL при низкоуровневом запросе: {e.reason}")
+            except Exception as low_level_error:
+                logger.error(f"Ошибка при низкоуровневом запросе: {str(low_level_error)}")
+            
+            return False
+            
+    def get_campaign_stats(self, campaign_id, fields=None, date_preset=None, time_range=None):
+        """
+        Получение статистики для кампании
+        
+        Args:
+            campaign_id (str): ID кампании
+            fields (list): Список полей для получения
+            date_preset (str): Предустановленный временной диапазон (today, yesterday, last_7_days)
+            time_range (dict): Настраиваемый временной диапазон в формате {'since': 'YYYY-MM-DD', 'until': 'YYYY-MM-DD'}
+            
+        Returns:
+            dict: Данные статистики кампании
+        """
+        if fields is None:
+            fields = ['campaign_name', 'spend', 'impressions', 'clicks', 'ctr']
+            
+        try:
+            # Формируем параметры запроса
+            params = {
+                'access_token': self.access_token,
+                'fields': ','.join(fields)
+            }
+            
+            # Добавляем временной диапазон
+            if time_range:
+                params['time_range'] = json.dumps(time_range)
+            elif date_preset:
+                params['date_preset'] = date_preset
+            else:
+                # По умолчанию используем сегодняшний день
+                params['date_preset'] = 'today'
+                
+            # Выполняем прямой запрос к API
+            logger.info(f"Запрос статистики для кампании {campaign_id}")
+            response = requests.get(
+                f'https://graph.facebook.com/v18.0/{campaign_id}/insights',
+                params=params,
+                timeout=30
+            )
+            
+            if response.status_code != 200:
+                logger.warning(f"Ошибка API: {response.status_code} - {response.text}")
+                # Продолжаем и пробуем через SDK
+            else:
+                data = response.json()
+                insights = data.get('data', [])
+                
+                if insights:
+                    logger.info(f"Получена статистика для кампании {campaign_id} через прямой запрос")
+                    return insights[0]  # Возвращаем первый результат
+                else:
+                    logger.warning(f"Пустой результат для кампании {campaign_id}")
+                    return {'campaign_id': campaign_id, 'spend': 0}
+                    
+        except Exception as api_error:
+            logger.warning(f"Ошибка при прямом запросе статистики: {str(api_error)}")
+            # Продолжаем и пробуем через SDK
+            
+        # Если прямой запрос не сработал, пробуем через SDK
+        try:
+            campaign = Campaign(campaign_id)
+            
+            # Настраиваем параметры
+            sdk_params = {}
+            if time_range:
+                sdk_params['time_range'] = time_range
+            elif date_preset:
+                sdk_params['date_preset'] = date_preset
+            else:
+                sdk_params['date_preset'] = 'today'
+                
+            insights = campaign.get_insights(
+                fields=fields,
+                params=sdk_params
+            )
+            
+            if insights:
+                logger.info(f"Получена статистика для кампании {campaign_id} через SDK")
+                return insights[0]
+            else:
+                logger.warning(f"Пустой результат для кампании {campaign_id} через SDK")
+                return {'campaign_id': campaign_id, 'spend': 0}
+                
+        except Exception as e:
+            logger.error(f"Ошибка при получении статистики для кампании {campaign_id}: {str(e)}")
+            return {'campaign_id': campaign_id, 'spend': 0}
+            
+    def update_campaign_status(self, campaign_id, status):
+        """
+        Обновление статуса кампании
+        
+        Args:
+            campaign_id (str): ID кампании
+            status (str): Новый статус ('ACTIVE', 'PAUSED', 'ARCHIVED')
+            
+        Returns:
+            bool: Результат операции
+        """
+        try:
+            # Сначала пробуем прямой API запрос
+            response = requests.post(
+                f'https://graph.facebook.com/v18.0/{campaign_id}',
+                params={
+                    'access_token': self.access_token,
+                    'status': status
+                },
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                logger.info(f"Статус кампании {campaign_id} изменен на {status} через прямой API запрос")
+                return True
+            else:
+                logger.warning(f"Ошибка API при изменении статуса кампании: {response.status_code} - {response.text}")
+                # Продолжаем и пробуем через SDK
+        except Exception as api_error:
+            logger.warning(f"Ошибка при прямом запросе на изменение статуса: {str(api_error)}")
+            # Продолжаем и пробуем через SDK
+        
+        # Если прямой API запрос не сработал, пробуем через SDK
+        try:
+            campaign = Campaign(campaign_id)
+            
+            # Преобразование статуса в формат SDK если необходимо
+            sdk_status = status
+            if status == 'ACTIVE':
+                sdk_status = Campaign.Status.active
+            elif status == 'PAUSED':
+                sdk_status = Campaign.Status.paused
+            elif status == 'ARCHIVED':
+                sdk_status = Campaign.Status.archived
+                
+            result = campaign.api_update(
+                params={
+                    'status': sdk_status,
+                }
+            )
+            logger.info(f"Статус кампании {campaign_id} изменен на {status} через SDK")
             return result
         except Exception as e:
-            logger.error(f"Ошибка при отключении объявления {ad_id}: {str(e)}")
+            logger.error(f"Ошибка при изменении статуса кампании {campaign_id}: {str(e)}")
             return False

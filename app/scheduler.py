@@ -51,7 +51,7 @@ def calculate_date_range_for_period(check_period):
 
 def check_campaign_thresholds(campaign_id=None, check_period=None):
     """
-    Проверяет пороги кампаний и отключает кампании, если они превышены.
+    Проверяет пороги кампаний и отключает объявления в кампаниях, если пороги превышены.
     
     Args:
         campaign_id (str, optional): ID кампании для проверки. По умолчанию проверяются все кампании.
@@ -180,7 +180,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                 db.session.commit()
                 
                 # Проверяем, превышены ли пороги
-                should_disable = False
+                should_disable_ads = False
                 
                 # Сортируем пороги по расходам (по возрастанию)
                 sorted_thresholds = sorted(thresholds, key=lambda x: x['spend'])
@@ -197,32 +197,75 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                 if applicable_threshold:
                     required_conversions = applicable_threshold['conversions']
                     if conversion_count < required_conversions:
-                        should_disable = True
+                        should_disable_ads = True
                         logger.info(
                             f"Порог превышен для кампании {campaign_setup.campaign_id}: "
                             f"расходы ${spend:.2f}, конверсии {conversion_count}, "
                             f"требуется минимум {required_conversions} конверсий при расходах ${applicable_threshold['spend']}"
                         )
                 
-                # Если нужно отключить кампанию
-                if should_disable:
+                # Если нужно отключить объявления
+                if should_disable_ads:
                     try:
-                        # Отключаем кампанию через Facebook API
-                        result = fb_api.update_campaign_status(
-                            campaign_id=campaign_setup.campaign_id,
-                            status='PAUSED'
-                        )
+                        # Получаем все объявления в кампании
+                        ads = fb_api.get_ads_in_campaign(campaign_setup.campaign_id)
                         
-                        if result:
+                        if ads:
+                            logger.info(f"Найдено {len(ads)} объявлений в кампании {campaign_setup.campaign_id} для отключения")
+                            
+                            successful_disables = 0
+                            failed_disables = 0
+                            
+                            # Отключаем каждое объявление
+                            for ad in ads:
+                                if hasattr(ad, 'id') and ad.id:
+                                    ad_id = ad.id
+                                    ad_name = getattr(ad, 'name', 'Неизвестное имя')
+                                    ad_status = getattr(ad, 'status', 'UNKNOWN')
+                                    
+                                    # Отключаем только активные объявления
+                                    if ad_status != 'PAUSED':
+                                        status = fb_api.disable_ad(ad_id)
+                                        if status:
+                                            successful_disables += 1
+                                            logger.info(f"Объявление {ad_id} ({ad_name}) успешно отключено")
+                                        else:
+                                            failed_disables += 1
+                                            logger.error(f"Ошибка при отключении объявления {ad_id} ({ad_name})")
+                                    else:
+                                        logger.info(f"Объявление {ad_id} ({ad_name}) уже отключено, пропускаем")
+                                        
+                            # Выводим итоговую статистику
                             logger.info(
-                                f"Кампания {campaign_setup.campaign_id} успешно приостановлена. "
-                                f"Расходы: ${spend:.2f}, конверсии: {conversion_count}, "
-                                f"период: {period}"
+                                f"Итого по кампании {campaign_setup.campaign_id}: "
+                                f"успешно отключено {successful_disables} объявлений, "
+                                f"не удалось отключить {failed_disables} объявлений"
                             )
+                            
+                            # Записываем статистику в файл для последующего анализа
+                            import json
+                            from pathlib import Path
+                            try:
+                                log_dir = Path('/data/disable_logs')
+                                log_dir.mkdir(exist_ok=True)
+                                report = {
+                                    'timestamp': datetime.utcnow().isoformat(),
+                                    'campaign_id': campaign_setup.campaign_id,
+                                    'campaign_name': campaign_stats.get('campaign_name', 'Н/Д'),
+                                    'spend': spend,
+                                    'conversions': conversion_count,
+                                    'threshold': applicable_threshold,
+                                    'successful_disables': successful_disables,
+                                    'failed_disables': failed_disables
+                                }
+                                with open(log_dir / f"disable_report_{campaign_setup.campaign_id}_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.json", 'w') as f:
+                                    json.dump(report, f)
+                            except Exception as log_error:
+                                logger.error(f"Ошибка при создании отчета: {str(log_error)}")
                         else:
-                            logger.error(f"Не удалось приостановить кампанию {campaign_setup.campaign_id}")
-                    except Exception as e:
-                        logger.error(f"Ошибка при приостановке кампании {campaign_setup.campaign_id}: {str(e)}")
+                            logger.warning(f"Не найдено объявлений в кампании {campaign_setup.campaign_id}")
+                    except Exception as ad_error:
+                        logger.error(f"Ошибка при отключении объявлений: {str(ad_error)}")
                 else:
                     logger.info(
                         f"Кампания {campaign_setup.campaign_id} в порядке. "
