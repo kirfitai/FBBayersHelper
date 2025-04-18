@@ -1,11 +1,14 @@
+import os
+import sys
 import logging
 from datetime import datetime, timedelta
-from sqlalchemy import and_
+from sqlalchemy import and_, func, or_
 from app.extensions import db
 from app.models.setup import Setup, CampaignSetup
 from app.models.user import User
-from app.services.facebook_api import FacebookAPI
+from app.services.fb_api_client import FacebookAdClient
 from app.models.facebook_token import FacebookToken
+from app.models.conversion import Conversion
 
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
@@ -117,11 +120,11 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                     continue
                 
                 # Инициализируем Facebook API
-                fb_api = FacebookAPI(
+                fb_api = FacebookAdClient(
                     access_token=token.access_token,
                     app_id=token.app_id,
                     app_secret=token.app_secret,
-                    account_id=token.account_id
+                    ad_account_id=token.account_id
                 )
                 
                 # Получаем статистику кампании
@@ -141,6 +144,36 @@ def check_campaign_thresholds(campaign_id=None, check_period=None):
                 
                 # Получаем количество конверсий
                 conversion_count = 0  # Здесь нужно добавить логику получения конверсий
+                
+                # Получаем конверсии за указанный период
+                try:
+                    # Берем префиксы из настройки
+                    ref_prefixes = setup.ref_prefixes.split(',') if setup.ref_prefixes else []
+                    ref_prefixes = [prefix.strip() for prefix in ref_prefixes if prefix.strip()]
+                    
+                    # Создаем фильтр для поиска конверсий по префиксам
+                    conversion_filters = []
+                    for prefix in ref_prefixes:
+                        conversion_filters.append(Conversion.ref_prefix == prefix)
+                    
+                    # Если есть префиксы, получаем конверсии
+                    if conversion_filters:
+                        # Преобразуем строковые даты в объекты datetime
+                        since_datetime = datetime.strptime(since_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0)
+                        until_datetime = datetime.strptime(until_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
+                        
+                        # Получаем количество конверсий
+                        conversion_count = Conversion.query.filter(
+                            and_(
+                                or_(*conversion_filters),
+                                Conversion.timestamp >= since_datetime,
+                                Conversion.timestamp <= until_datetime
+                            )
+                        ).count()
+                        
+                        logger.info(f"Найдено {conversion_count} конверсий для префиксов {ref_prefixes} за период {since_date} - {until_date}")
+                except Exception as e:
+                    logger.error(f"Ошибка при получении конверсий: {str(e)}")
                 
                 # Обновляем время последней проверки
                 campaign_setup.last_checked = datetime.utcnow()
