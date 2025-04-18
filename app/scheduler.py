@@ -133,13 +133,23 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                     report_output.append("ОШИБКА: У пользователя нет активного токена API Facebook")
                     continue
                 
+                # Получаем account_id из первого аккаунта токена
+                account_ids = token.get_account_ids()
+                if not account_ids:
+                    logger.error(f"У токена {token.id} нет связанных аккаунтов")
+                    report_output.append("ОШИБКА: У токена нет связанных аккаунтов Facebook")
+                    continue
+                
+                account_id = account_ids[0]
+                logger.info(f"Используем аккаунт {account_id} для проверки кампании")
+                
                 # Инициализируем Facebook API
                 from app.services.facebook_api import FacebookAPI
                 fb_api = FacebookAPI(
                     access_token=token.access_token, 
                     app_id=token.app_id,
                     app_secret=token.app_secret,
-                    account_id=token.account_id
+                    account_id=account_id
                 )
                 
                 # Получаем префиксы для отслеживания конверсий
