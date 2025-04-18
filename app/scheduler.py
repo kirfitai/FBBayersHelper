@@ -142,8 +142,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                 fb_api = FacebookAPI(
                     access_token=token.access_token, 
                     app_id=token.app_id,
-                    app_secret=token.app_secret,
-                    account_id=account_id
+                    app_secret=token.app_secret
                 )
                 
                 # Получаем префиксы для отслеживания конверсий
