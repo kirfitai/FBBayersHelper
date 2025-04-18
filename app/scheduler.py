@@ -51,115 +51,95 @@ def calculate_date_range_for_period(check_period):
 
 def check_campaign_thresholds(campaign_id=None, check_period=None, return_details=False):
     """
-    Проверяет пороги кампаний и отключает объявления в кампаниях, если пороги превышены.
-    Проверка выполняется для каждого объявления отдельно.
+    Проверяет пороги для кампаний и отключает объявления, которые не соответствуют
     
     Args:
-        campaign_id (str, optional): ID кампании для проверки. По умолчанию проверяются все кампании.
-        check_period (str, optional): Период проверки ('today', 'last2days', 'last3days', 'last7days', 'alltime').
-            По умолчанию используется период из настройки кампании.
-        return_details (bool, optional): Вернуть детальную информацию о проверке каждого объявления.
-    
+        campaign_id (str, optional): ID конкретной кампании для проверки
+        check_period (str, optional): Период проверки ('today', 'last2days', 'last3days', 'last7days', 'alltime')
+        return_details (bool, optional): Возвращать ли детальную информацию о результатах проверки
+        
     Returns:
-        bool: True если все проверки выполнены успешно, иначе False
-        list: (опционально) Список с детальной информацией о каждом объявлении, если return_details=True
+        bool: Результат операции (True - успешно, False - ошибка)
+        list: Список результатов проверки объявлений (если return_details=True)
     """
+    logger.info(f"Запуск проверки порогов кампаний{'для ID ' + campaign_id if campaign_id else ''}")
+    
     try:
-        # Создаем строку для вывода отчета по проверке
-        report_output = []
-        report_output.append("=" * 80)
-        report_output.append("ОТЧЕТ ПО ПРОВЕРКЕ ОБЪЯВЛЕНИЙ")
-        report_output.append("=" * 80)
+        # Получаем все настройки кампаний или конкретную настройку
+        from app.models.setup import CampaignSetup, Setup
+        from app.models.facebook_token import FacebookToken
+        from app.models.conversion import Conversion
+        from sqlalchemy import and_, or_
         
-        # Список с детальной информацией о каждом объявлении
-        ads_results = []
-        
-        # Если campaign_id указан, проверяем только эту кампанию
+        query = CampaignSetup.query.filter_by(is_active=True)
         if campaign_id:
-            logger.info(f"Запрошена проверка кампании с ID {campaign_id}")
-            campaign_setups = CampaignSetup.query.filter(
-                CampaignSetup.campaign_id == campaign_id,
-                CampaignSetup.is_active == True
-            ).all()
-            if not campaign_setups:
-                logger.warning(f"Кампания {campaign_id} не найдена или не активна")
-                if return_details:
-                    return False, []
-                return False
-        else:
-            # Получаем все активные настройки кампаний
-            logger.info("Запрошена проверка всех активных кампаний")
-            campaign_setups = CampaignSetup.query.filter(
-                CampaignSetup.is_active == True
-            ).all()
+            query = query.filter_by(campaign_id=campaign_id)
             
+        campaign_setups = query.all()
+        logger.info(f"Найдено {len(campaign_setups)} активных назначений кампаний для проверки")
+        
         if not campaign_setups:
-            logger.info("Нет активных настроек кампаний для проверки")
+            logger.warning(f"Активные назначения кампаний не найдены")
             if return_details:
-                return True, []
-            return True
+                return False, []
+            return False
             
-        # Обработка каждой кампании
+        ads_results = []  # Для хранения результатов проверки каждого объявления
+            
         for campaign_setup in campaign_setups:
             try:
-                logger.info(f"Начинаем проверку кампании {campaign_setup.campaign_id} (ID настройки: {campaign_setup.id})")
+                report_output = []  # Для формирования текстового отчета
                 
+                report_output.append("=" * 80)
+                report_output.append(f"ПРОВЕРКА КАМПАНИИ: {campaign_setup.campaign_id} - {campaign_setup.campaign_name or 'Без имени'}")
+                report_output.append("=" * 80)
+                
+                # Получаем сетап и пороги для кампании
                 setup = Setup.query.get(campaign_setup.setup_id)
-                if not setup or not setup.is_active:
-                    logger.info(f"Setup {campaign_setup.setup_id} не активен или не существует")
+                if not setup:
+                    logger.error(f"Сетап {campaign_setup.setup_id} не найден")
+                    report_output.append(f"ОШИБКА: Сетап {campaign_setup.setup_id} не найден")
                     continue
-                
-                # Используем переданный период проверки или берем из настройки
-                period = check_period if check_period is not None else setup.check_period
-                # Если период всё еще None, используем 'today'
-                if period is None:
-                    period = 'today'
                     
-                logger.info(f"Используем период проверки: {period}")
-                since_date, until_date = calculate_date_range_for_period(period)
-                logger.info(f"Диапазон дат для проверки: с {since_date} по {until_date}")
+                report_output.append(f"Сетап: {setup.name}")
                 
-                # Получаем пороги для настройки
-                thresholds = setup.get_thresholds_as_list()
-                if not thresholds:
-                    logger.info(f"Нет порогов для настройки {setup.id}")
-                    continue
-                
-                report_output.append(f"\nКампания: {campaign_setup.campaign_id} - {campaign_setup.campaign_name or 'Без имени'}")
+                # Получаем период для проверки (из параметра или из настроек сетапа)
+                period = check_period or setup.check_period or 'today'
                 report_output.append(f"Период проверки: {period}")
+                
+                # Определяем диапазон дат для периода
+                since_date, until_date = calculate_date_range_for_period(period)
                 report_output.append(f"Диапазон дат: {since_date} - {until_date}")
                 
-                # Выводим информацию о порогах
-                report_output.append("\nНастроенные пороги:")
-                for i, threshold in enumerate(sorted(thresholds, key=lambda x: x['spend'])):
-                    report_output.append(f"  {i+1}. Расход: ${threshold['spend']}, Требуемые конверсии: {threshold['conversions']}")
-                    logger.info(f"Порог {i+1}: Расход ${threshold['spend']}, Требуемые конверсии: {threshold['conversions']}")
-                
-                # Получаем пользователя
-                user = User.query.get(campaign_setup.user_id)
-                if not user:
-                    logger.error(f"Пользователь {campaign_setup.user_id} не найден")
+                # Получаем пороги из сетапа
+                thresholds = setup.get_thresholds_as_list()
+                if not thresholds:
+                    logger.error(f"В сетапе {setup.id} не настроены пороги")
+                    report_output.append("ОШИБКА: В сетапе не настроены пороги")
                     continue
                 
-                # Получаем активный токен пользователя
-                if user.active_token_id:
-                    token = FacebookToken.query.get(user.active_token_id)
-                    logger.info(f"Используем активный токен пользователя ID: {token.id}, Account: {token.account_id}")
-                else:
-                    token = FacebookToken.query.filter_by(user_id=user.id, is_active=True).first()
-                    if token:
-                        logger.info(f"Используем первый активный токен: ID: {token.id}, Account: {token.account_id}")
+                # Сортируем пороги по расходам (для удобства)
+                thresholds = sorted(thresholds, key=lambda x: x['spend'])
                 
+                # Выводим пороги
+                report_output.append("\nНастроенные пороги:")
+                for threshold in thresholds:
+                    report_output.append(f"- Расход: ${threshold['spend']}, мин. конверсий: {threshold['conversions']}")
+                
+                # Получаем API токен пользователя
+                token = FacebookToken.query.filter_by(user_id=campaign_setup.user_id, is_active=True).first()
                 if not token:
-                    logger.error(f"Активный токен Facebook не найден для пользователя {user.id}")
+                    logger.error(f"У пользователя {campaign_setup.user_id} нет активного токена API")
+                    report_output.append("ОШИБКА: У пользователя нет активного токена API Facebook")
                     continue
                 
                 # Инициализируем Facebook API
-                fb_api = FacebookAdClient(
-                    access_token=token.access_token,
+                from app.services.facebook_api import FacebookAPI
+                fb_api = FacebookAPI(
+                    access_token=token.access_token, 
                     app_id=token.app_id,
                     app_secret=token.app_secret,
-                    ad_account_id=token.account_id
+                    account_id=token.account_id
                 )
                 
                 # Получаем префиксы для отслеживания конверсий
@@ -193,34 +173,14 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                 campaign_setup.last_checked = datetime.utcnow()
                 db.session.commit()
                 
-                # Получаем количество конверсий за период для этой кампании
-                campaign_conversions = 0
-                try:
-                    # Создаем фильтр для поиска конверсий по префиксам
-                    conversion_filters = []
-                    for prefix in ref_prefixes:
-                        conversion_filters.append(Conversion.ref_prefix == prefix)
+                # Создаем фильтр для поиска конверсий по префиксам
+                conversion_filters = []
+                for prefix in ref_prefixes:
+                    conversion_filters.append(Conversion.ref_prefix == prefix)
                     
-                    # Если есть префиксы, получаем конверсии
-                    if conversion_filters:
-                        # Преобразуем строковые даты в объекты datetime
-                        since_datetime = datetime.strptime(since_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0)
-                        until_datetime = datetime.strptime(until_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
-                        
-                        # Получаем количество конверсий для кампании
-                        campaign_conversions = Conversion.query.filter(
-                            and_(
-                                or_(*conversion_filters),
-                                Conversion.timestamp >= since_datetime,
-                                Conversion.timestamp <= until_datetime
-                            )
-                        ).count()
-                        
-                        logger.info(f"Найдено {campaign_conversions} конверсий для кампании за период {since_date} - {until_date}")
-                except Exception as e:
-                    logger.error(f"Ошибка при получении конверсий: {str(e)}")
-                
-                report_output.append(f"Всего конверсий для кампании: {campaign_conversions}")
+                # Преобразуем строковые даты в объекты datetime для фильтрации конверсий
+                since_datetime = datetime.strptime(since_date, '%Y-%m-%d').replace(hour=0, minute=0, second=0)
+                until_datetime = datetime.strptime(until_date, '%Y-%m-%d').replace(hour=23, minute=59, second=59)
                 
                 # Проверяем каждое объявление отдельно
                 successful_disabled = 0
@@ -243,7 +203,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                         'id': ad_id,
                         'name': ad_name,
                         'status': ad_status,
-                        'conversions': campaign_conversions,
+                        'conversions': 0,
                         'disabled': False,
                         'disabled_success': False
                     }
@@ -259,7 +219,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                         logger.info(f"Объявление {ad_id} не активно, пропускаем")
                         continue
                     
-                    # Получаем статистику объявления из Facebook API - ЗАНОВО ПРИ КАЖДОЙ ПРОВЕРКЕ
+                    # Получаем статистику объявления из Facebook API
                     logger.info(f"Запрашиваем статистику для объявления {ad_id}")
                     ad_stats = fb_api.get_ad_insights(ad_id, date_preset=None, time_range={'since': since_date, 'until': until_date})
                     
@@ -268,31 +228,93 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                     ad_result['spend'] = ad_spend
                     logger.info(f"Расход по объявлению {ad_id}: ${ad_spend}")
                     
+                    # Получаем конверсии для конкретного объявления (по соответствию ID объявления с form_id)
+                    ad_conversions = 0
+                    try:
+                        # Если есть префиксы, получаем конверсии
+                        if conversion_filters:
+                            # Запрос конверсий, где form_id соответствует ID объявления
+                            ad_conversions_query = Conversion.query.filter(
+                                and_(
+                                    or_(*conversion_filters),
+                                    Conversion.form_id == ad_id,  # Соответствие form_id и ID объявления
+                                    Conversion.timestamp >= since_datetime,
+                                    Conversion.timestamp <= until_datetime
+                                )
+                            )
+                            
+                            ad_conversions = ad_conversions_query.count()
+                            logger.info(f"Найдено {ad_conversions} конверсий для объявления {ad_id} за период {since_date} - {until_date}")
+                    except Exception as e:
+                        logger.error(f"Ошибка при получении конверсий для объявления {ad_id}: {str(e)}")
+                    
+                    ad_result['conversions'] = ad_conversions
+                    
                     # Проверяем, превышены ли пороги
                     should_disable = False
                     required_conversions = 0
                     
-                    # Сортируем пороги по расходам (по возрастанию)
-                    sorted_thresholds = sorted(thresholds, key=lambda x: x['spend'])
+                    # Сортируем пороги по количеству конверсий (от большего к меньшему)
+                    sorted_by_conversions = sorted(thresholds, key=lambda x: x['conversions'], reverse=True)
                     
-                    # Находим подходящий порог для объявления
-                    applicable_threshold = None
-                    for threshold in sorted_thresholds:
-                        if ad_spend >= threshold['spend']:
-                            applicable_threshold = threshold
-                        else:
-                            break
+                    # Определяем максимальное количество конверсий в сетапе
+                    max_conversions_threshold = sorted_by_conversions[0]['conversions'] if sorted_by_conversions else 0
                     
-                    # Если нашли подходящий порог, проверяем условие
-                    if applicable_threshold:
-                        required_conversions = applicable_threshold['conversions']
+                    # НОВАЯ ЛОГИКА:
+                    # Если количество конверсий превышает максимальное значение в сетапе,
+                    # объявление автоматически проходит проверку
+                    if ad_conversions > max_conversions_threshold:
+                        should_disable = False
+                        required_conversions = max_conversions_threshold
                         ad_result['required_conversions'] = required_conversions
-                        if campaign_conversions < required_conversions:
-                            should_disable = True
-                            logger.info(f"Объявление {ad_id} не прошло проверку: расход ${ad_spend} >= ${applicable_threshold['spend']}, конверсии {campaign_conversions} < {required_conversions}")
+                        logger.info(f"Объявление {ad_id} автоматически прошло проверку: конверсии ({ad_conversions}) превышают максимальное значение в сетапе ({max_conversions_threshold})")
                     else:
-                        ad_result['required_conversions'] = 0
-                        logger.info(f"Для объявления {ad_id} с расходом ${ad_spend} не найден применимый порог")
+                        # Ищем порог, который точно соответствует количеству конверсий
+                        exact_match_threshold = None
+                        for threshold in thresholds:
+                            if threshold['conversions'] == ad_conversions:
+                                exact_match_threshold = threshold
+                                break
+                        
+                        # Если нашли точное соответствие, проверяем расход
+                        if exact_match_threshold:
+                            required_conversions = exact_match_threshold['conversions']
+                            ad_result['required_conversions'] = required_conversions
+                            
+                            # Если расход превышен или равен пороговому, отключаем объявление
+                            if ad_spend >= exact_match_threshold['spend']:
+                                should_disable = True
+                                logger.info(f"Объявление {ad_id} не прошло проверку: расход ${ad_spend} >= ${exact_match_threshold['spend']}, конверсии {ad_conversions} == {required_conversions}")
+                            else:
+                                should_disable = False
+                                logger.info(f"Объявление {ad_id} прошло проверку: расход ${ad_spend} < ${exact_match_threshold['spend']}, конверсии {ad_conversions} == {required_conversions}")
+                        else:
+                            # Если нет точного соответствия, ищем ближайший нижний порог
+                            lower_threshold = None
+                            for threshold in sorted(thresholds, key=lambda x: x['conversions']):
+                                if threshold['conversions'] < ad_conversions:
+                                    lower_threshold = threshold
+                                    break
+                            
+                            if lower_threshold:
+                                # Если есть нижний порог и конверсий больше, чем требуется - объявление проходит
+                                required_conversions = lower_threshold['conversions']
+                                ad_result['required_conversions'] = required_conversions
+                                should_disable = False
+                                logger.info(f"Объявление {ad_id} прошло проверку: конверсии {ad_conversions} > {required_conversions}")
+                            else:
+                                # Если конверсий меньше минимального порога, проверяем минимальный порог
+                                min_threshold = min(thresholds, key=lambda x: x['conversions'])
+                                required_conversions = min_threshold['conversions']
+                                ad_result['required_conversions'] = required_conversions
+                                
+                                # Если расход превышает порог, а конверсий меньше минимального требования, отключаем
+                                if ad_spend >= min_threshold['spend'] and ad_conversions < min_threshold['conversions']:
+                                    should_disable = True
+                                    logger.info(f"Объявление {ad_id} не прошло проверку: расход ${ad_spend} >= ${min_threshold['spend']}, конверсии {ad_conversions} < {min_threshold['conversions']}")
+                                else:
+                                    should_disable = False
+                                    logger.info(f"Объявление {ad_id} прошло проверку: расход ${ad_spend} < ${min_threshold['spend']} или конверсии достаточны")
                     
                     # Выводим информацию о проверке
                     if should_disable:
@@ -306,16 +328,16 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                         if disable_result:
                             successful_disabled += 1
                             ad_result['disabled_success'] = True
-                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
+                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {ad_conversions:<10} {required_conversions:<10} {result}")
                             logger.info(f"Объявление {ad_id} успешно отключено")
                         else:
                             failed_disabled += 1
-                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result} (ОШИБКА)")
+                            report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {ad_conversions:<10} {required_conversions:<10} {result} (ОШИБКА)")
                             logger.error(f"Не удалось отключить объявление {ad_id}")
                     else:
                         result = "ПРОШЛО"
                         ad_result['result'] = result
-                        report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {campaign_conversions:<10} {required_conversions:<10} {result}")
+                        report_output.append(f"{ad_id:<20} {ad_name[:20]:<20} {ad_status:<10} ${ad_spend:<9.2f} {ad_conversions:<10} {required_conversions:<10} {result}")
                         logger.info(f"Объявление {ad_id} прошло проверку")
                     
                     # Добавляем результат проверки в список
