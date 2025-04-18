@@ -535,8 +535,15 @@ def check_campaign_setup(id):
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
+        # Извлекаем даты из логов для отображения
+        date_range = None
+        for log_line in detailed_logs:
+            if "Диапазон дат:" in log_line:
+                date_range = log_line.split("Диапазон дат:")[1].strip()
+                break
+        
         # Формируем HTML-таблицу с результатами для сохранения в сессии
-        if ads_results:
+        if ads_results and len(ads_results) > 0:
             detailed_logs.append(f"Найдено {len(ads_results)} объявлений для проверки")
             
             # Верхняя часть таблицы
@@ -633,6 +640,11 @@ def check_campaign_setup(id):
                             </div>
                         </div>
                     </div>
+                    
+                    <div class="mt-3">
+                        <p><strong>Период проверки:</strong> {check_period or 'today'}</p>
+                        <p><strong>Диапазон дат:</strong> {date_range or 'Не указан'}</p>
+                    </div>
                 </div>
             </div>
             """
@@ -663,16 +675,23 @@ def check_campaign_setup(id):
             # Отображаем успешное сообщение с инструкцией
             flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно. Нажмите на строку кампании, чтобы увидеть подробные результаты.', 'success')
         else:
-            detailed_logs.append("Объявления не найдены в кампании")
+            # Проверяем, есть ли в логах сообщение об отсутствии объявлений
+            no_ads_found = any("не найдено объявлений" in log.lower() for log in detailed_logs)
+            
+            title = "Объявления не найдены" if no_ads_found else "Проверка завершена"
+            message = "В этой кампании не удалось найти объявления для проверки." if no_ads_found else "Проверка кампании выполнена, но список результатов пуст."
+            card_class = "bg-warning" if no_ads_found else "bg-info"
             
             # Создаем HTML с детальным логом, но без таблицы результатов
-            html_details = """
+            html_details = f"""
             <div class="card">
-                <div class="card-header bg-warning">
-                    <h5 class="mb-0">Объявления не найдены</h5>
+                <div class="card-header {card_class}">
+                    <h5 class="mb-0">{title}</h5>
                 </div>
                 <div class="card-body">
-                    <p>В этой кампании не удалось найти объявления для проверки.</p>
+                    <p>{message}</p>
+                    <p><strong>Период проверки:</strong> {check_period or 'today'}</p>
+                    <p><strong>Диапазон дат:</strong> {date_range or 'Не указан'}</p>
                 </div>
             </div>
             
@@ -697,7 +716,10 @@ def check_campaign_setup(id):
             session['check_details_html'] = html_details
             session['check_campaign_id'] = campaign_setup.campaign_id
             
-            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'success')
+            if no_ads_found:
+                flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'warning')
+            else:
+                flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена, но список результатов пуст.', 'info')
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
         import traceback

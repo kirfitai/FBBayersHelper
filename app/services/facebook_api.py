@@ -65,7 +65,37 @@ class FacebookAPI:
             list: Список объектов объявлений
         """
         logger.info(f"FacebookAPI: Запрос объявлений для кампании {campaign_id}")
-        return self.client.get_ads_in_campaign(campaign_id)
+        ads = self.client.get_ads_in_campaign(campaign_id)
+        
+        # Проверяем, получили ли мы объявления
+        if not ads:
+            logger.warning(f"FacebookAPI: Не получены объявления для кампании {campaign_id}")
+            return []
+            
+        logger.info(f"FacebookAPI: Получено {len(ads)} объявлений для кампании {campaign_id}")
+        
+        # Убеждаемся, что объекты объявлений содержат все необходимые атрибуты
+        for ad in ads:
+            # Проверяем наличие атрибута status, если его нет - устанавливаем значение по умолчанию
+            if not hasattr(ad, 'status') and hasattr(ad, 'effective_status'):
+                setattr(ad, 'status', getattr(ad, 'effective_status'))
+            elif not hasattr(ad, 'status'):
+                setattr(ad, 'status', 'UNKNOWN')
+                
+            # Проверяем наличие атрибута id
+            if not hasattr(ad, 'id') and hasattr(ad, '_data') and 'id' in ad._data:
+                setattr(ad, 'id', ad._data['id'])
+                
+            # Проверяем наличие атрибута name
+            if not hasattr(ad, 'name') and hasattr(ad, '_data') and 'name' in ad._data:
+                setattr(ad, 'name', ad._data['name'])
+                
+        # Возвращаем список объявлений
+        active_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'ACTIVE')
+        paused_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'PAUSED')
+        logger.info(f"FacebookAPI: Активных объявлений: {active_count}, отключенных: {paused_count}")
+        
+        return ads
     
     def get_ad_insights(self, ad_id, date_preset=None, time_range=None):
         """

@@ -90,9 +90,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
             try:
                 report_output = []  # Для формирования текстового отчета
                 
-                report_output.append("=" * 80)
-                report_output.append(f"ПРОВЕРКА КАМПАНИИ: {campaign_setup.campaign_id} - {campaign_setup.campaign_name or 'Без имени'}")
-                report_output.append("=" * 80)
+                report_output.append(f"Начинаем проверку кампании {campaign_setup.campaign_id} ({campaign_setup.campaign_name or 'Без имени'})")
                 
                 # Получаем сетап и пороги для кампании
                 setup = Setup.query.get(campaign_setup.setup_id)
@@ -101,14 +99,10 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                     report_output.append(f"ОШИБКА: Сетап {campaign_setup.setup_id} не найден")
                     continue
                     
-                report_output.append(f"Сетап: {setup.name}")
-                
-                # Получаем период для проверки (из параметра или из настроек сетапа)
-                period = check_period or setup.check_period or 'today'
-                report_output.append(f"Период проверки: {period}")
+                report_output.append(f"Используем период проверки: {check_period or setup.check_period or 'today'}")
                 
                 # Определяем диапазон дат для периода
-                since_date, until_date = calculate_date_range_for_period(period)
+                since_date, until_date = calculate_date_range_for_period(check_period or setup.check_period)
                 report_output.append(f"Диапазон дат: {since_date} - {until_date}")
                 
                 # Получаем пороги из сетапа
@@ -141,7 +135,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                     continue
                 
                 account_id = account_ids[0]
-                logger.info(f"Используем аккаунт {account_id} для проверки кампании")
+                report_output.append(f"Используем аккаунт {account_id} для проверки кампании")
                 
                 # Инициализируем Facebook API
                 from app.services.facebook_api import FacebookAPI
@@ -163,17 +157,32 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                     report_output.append("\nВнимание: префиксы REF не настроены!")
                     logger.warning("Внимание: префиксы REF не настроены!")
                 
-                # Получаем все объявления в кампании - ЗАНОВО ПРИ КАЖДОЙ ПРОВЕРКЕ
-                logger.info(f"Получаем объявления для кампании {campaign_setup.campaign_id}")
-                ads = fb_api.get_ads_in_campaign(campaign_setup.campaign_id)
+                # Получаем все объявления в кампании
+                report_output.append(f"Получаем объявления для кампании {campaign_setup.campaign_id}")
+                ads = None 
+                try:
+                    logger.info(f"Запрашиваем объявления для кампании {campaign_setup.campaign_id}")
+                    ads = fb_api.get_ads_in_campaign(campaign_setup.campaign_id)
+                    if ads:
+                        logger.info(f"Успешно получено {len(ads)} объявлений")
+                        report_output.append(f"Получено {len(ads)} объявлений в кампании")
+                    else:
+                        logger.warning(f"В кампании {campaign_setup.campaign_id} не найдено объявлений или получен пустой список")
+                        report_output.append("В кампании не найдено объявлений")
+                        ads = []
+                except Exception as ads_error:
+                    logger.error(f"Ошибка при получении объявлений: {str(ads_error)}")
+                    report_output.append(f"ОШИБКА при получении объявлений: {str(ads_error)}")
+                    ads = []
                 
                 if not ads:
-                    report_output.append("\nВ кампании не найдено объявлений")
+                    report_output.append("Объявления не найдены в кампании")
                     logger.warning(f"В кампании {campaign_setup.campaign_id} не найдено объявлений")
+                    # Обновляем время последней проверки, даже если не найдены объявления
+                    campaign_setup.last_checked = datetime.utcnow()
+                    db.session.commit()
                     continue
                 
-                logger.info(f"Получено {len(ads)} объявлений для кампании {campaign_setup.campaign_id}")
-                report_output.append(f"\nНайдено {len(ads)} объявлений в кампании")
                 report_output.append("\nПРОВЕРКА ОБЪЯВЛЕНИЙ:")
                 report_output.append("-" * 80)
                 report_output.append(f"{'ID объявления':<20} {'Название':<20} {'Статус':<10} {'Расход':<10} {'Конверсии':<10} {'Требуется':<10} {'Результат':<10}")
@@ -356,7 +365,11 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                 # Выводим итоговую статистику
                 report_output.append("-" * 80)
                 report_output.append(f"Итоги проверки: Успешно отключено {successful_disabled} объявлений, ошибки при отключении {failed_disabled} объявлений, пропущено {skipped_ads} объявлений")
-                report_output.append("=" * 80)
+                report_output.append(f"Проверка завершена с результатом: Успешно")
+                
+                # Возвращаем пустую строку, если объявления не найдены
+                if not ads:
+                    report_output.append("Объявления не найдены в кампании")
                 
                 # Записываем отчет в лог
                 logger.info("\n".join(report_output))
@@ -415,7 +428,7 @@ def check_campaign_thresholds(campaign_id=None, check_period=None, return_detail
                         'failed_disabled': failed_disabled,
                         'skipped_ads': skipped_ads,
                         'total_ads': len(ads),
-                        'period': period,
+                        'period': check_period or setup.check_period or 'today',
                         'date_range': f"{since_date} - {until_date}",
                         'ads_results': ads_results  # Добавляем детальную информацию о проверке
                     }
