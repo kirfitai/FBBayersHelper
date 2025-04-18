@@ -80,7 +80,60 @@ class FacebookAPI:
             dict: Данные статистики
         """
         logger.info(f"FacebookAPI: Запрос инсайтов для объявления {ad_id}")
-        return self.client.get_ad_insights(ad_id, date_preset, time_range)
+        
+        # Проверяем, предоставлен ли параметр time_range
+        if time_range:
+            # Если указан time_range, получаем дату начала и конца для построения URL
+            since_date = time_range.get('since')
+            until_date = time_range.get('until')
+            logger.info(f"Используем кастомный период: {since_date} - {until_date}")
+            
+            # Создаем временный URL с параметрами для прямого запроса
+            url = f'https://graph.facebook.com/v18.0/{ad_id}/insights'
+            params = {
+                'access_token': self.client.access_token,
+                'fields': 'spend,actions',
+                'time_range': f'{{"since":"{since_date}","until":"{until_date}"}}',
+                'time_increment': 1
+            }
+            
+            try:
+                import requests
+                import json
+                
+                response = requests.get(url, params=params, timeout=30)
+                if response.status_code == 200:
+                    data = response.json()
+                    insights = data.get('data', [])
+                    
+                    if not insights:
+                        logger.warning(f"Нет данных для объявления {ad_id} за период {since_date} - {until_date}")
+                        return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
+                    
+                    # Извлечение данных о расходах и конверсиях
+                    spend = float(insights[0].get('spend', 0))
+                    conversions = 0
+                    
+                    actions = insights[0].get('actions', [])
+                    for action in actions:
+                        if action.get('action_type') in ['offsite_conversion', 'lead', 'purchase']:
+                            conversions += int(action.get('value', 0))
+                    
+                    logger.info(f"Получены данные об объявлении {ad_id}: расход=${spend}, конверсий={conversions}")
+                    return {
+                        'ad_id': ad_id,
+                        'spend': spend,
+                        'conversions': conversions
+                    }
+                else:
+                    logger.error(f"Ошибка API при получении данных: {response.status_code} - {response.text}")
+            except Exception as e:
+                logger.error(f"Ошибка при прямом запросе инсайтов: {str(e)}")
+        
+        # Если time_range не указан или произошла ошибка, используем стандартный метод
+        actual_date_preset = date_preset or 'today'
+        logger.info(f"Используем стандартный период: {actual_date_preset}")
+        return self.client.get_ad_insights(ad_id, actual_date_preset)
     
     def disable_ad(self, ad_id):
         """
