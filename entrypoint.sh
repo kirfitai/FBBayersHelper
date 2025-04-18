@@ -17,10 +17,15 @@ fi
 echo "Database initialization completed successfully."
 echo "Starting scheduler in background..."
 
-# Запускаем планировщик в фоновом режиме
-python /app/scheduler.py &
-SCHEDULER_PID=$!
-echo "Scheduler started with PID: $SCHEDULER_PID"
+# Проверяем переменную для запуска планировщика
+if [ "$ENABLE_SCHEDULER" = "true" ]; then
+  # Запускаем планировщик в фоновом режиме с перенаправлением вывода в лог
+  python /app/scheduler.py > /data/scheduler.log 2>&1 &
+  SCHEDULER_PID=$!
+  echo "Scheduler started with PID: $SCHEDULER_PID"
+else
+  echo "Scheduler is disabled. Set ENABLE_SCHEDULER=true to enable it."
+fi
 
 echo "Starting gunicorn server with debug logging..."
 

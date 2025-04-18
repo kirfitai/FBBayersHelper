@@ -325,6 +325,15 @@ def refresh_campaigns():
                                 'account_name': account_name
                             }
                             all_campaigns.append(campaign_data)
+                        # Обработка объектов класса Campaign из facebook_business SDK
+                        elif hasattr(campaign, '_data') and 'id' in campaign._data and 'name' in campaign._data:
+                            campaign_data = {
+                                'id': campaign._data['id'],
+                                'name': campaign._data['name'],
+                                'account_id': account_id,
+                                'account_name': account_name
+                            }
+                            all_campaigns.append(campaign_data)
                         elif isinstance(campaign, dict) and 'id' in campaign and 'name' in campaign:
                             campaign_data = {
                                 'id': campaign['id'],
