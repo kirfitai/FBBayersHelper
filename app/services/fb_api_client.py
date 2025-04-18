@@ -196,17 +196,18 @@ class FacebookAdClient:
             logger.warning("Не удалось получить кампании, возвращаем пустой список")
             return []
     
-    def get_ads_in_campaign(self, campaign_id):
+    def get_ads_in_campaign(self, campaign_id, timeout=30):
         """
         Получение всех объявлений в кампании
         
         Args:
             campaign_id (str): ID кампании
+            timeout (int): Таймаут для запросов в секундах
             
         Returns:
             list: Список объектов объявлений
         """
-        logger.info(f"Запрос объявлений для кампании {campaign_id}")
+        logger.info(f"Запрос объявлений для кампании {campaign_id} с таймаутом {timeout} сек")
         all_ads = []
         
         # Пробуем сначала использовать прямой API запрос с пагинацией
@@ -231,10 +232,10 @@ class FacebookAdClient:
                     
                     if '?' in next_url:
                         # Если next_url уже содержит параметры, не используем params
-                        response = requests.get(next_url, timeout=30)
+                        response = requests.get(next_url, timeout=timeout)
                     else:
                         # Иначе используем исходные параметры
-                        response = requests.get(next_url, params=params, timeout=30)
+                        response = requests.get(next_url, params=params, timeout=timeout)
                     
                     if response.status_code != 200:
                         error_msg = f"Ошибка API при получении объявлений: {response.status_code} - {response.text}"
@@ -349,7 +350,7 @@ class FacebookAdClient:
                 'limit': 100
             }
             
-            adsets_response = requests.get(adsets_url, params=adsets_params, timeout=30)
+            adsets_response = requests.get(adsets_url, params=adsets_params, timeout=timeout)
             
             if adsets_response.status_code == 200:
                 adsets_data = adsets_response.json()
@@ -370,7 +371,7 @@ class FacebookAdClient:
                     }
                     
                     try:
-                        ads_response = requests.get(ads_url, params=ads_params, timeout=30)
+                        ads_response = requests.get(ads_url, params=ads_params, timeout=timeout)
                         
                         if ads_response.status_code == 200:
                             ads_data = ads_response.json()
@@ -415,13 +416,14 @@ class FacebookAdClient:
         logger.error(f"Не удалось получить объявления для кампании {campaign_id}, возвращаем пустой список")
         return []
     
-    def get_ad_insights(self, ad_id, date_preset='today'):
+    def get_ad_insights(self, ad_id, date_preset='today', timeout=60):
         """
         Получение статистики по объявлению
         
         Args:
             ad_id (str): ID объявления
             date_preset (str): Временной период ('today', 'yesterday', 'last_7_days', etc.)
+            timeout (int): Таймаут для запросов в секундах
             
         Returns:
             dict: Данные о расходах и конверсиях
@@ -436,7 +438,7 @@ class FacebookAdClient:
                     'date_preset': date_preset,
                     'time_increment': 1
                 },
-                timeout=30
+                timeout=timeout
             )
             
             if response.status_code == 200:
@@ -499,12 +501,13 @@ class FacebookAdClient:
             logger.error(f"Ошибка при получении статистики для объявления {ad_id}: {str(e)}")
             return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
     
-    def disable_ad(self, ad_id):
+    def disable_ad(self, ad_id, timeout=60):
         """
         Отключение объявления
         
         Args:
             ad_id (str): ID объявления
+            timeout (int): Таймаут для запросов в секундах
             
         Returns:
             bool: Результат операции
@@ -520,7 +523,7 @@ class FacebookAdClient:
                     'access_token': self.access_token,
                     'fields': 'status,name'
                 },
-                timeout=30
+                timeout=timeout
             )
             
             if ad_info_response.status_code == 200:
@@ -546,7 +549,7 @@ class FacebookAdClient:
                     'access_token': self.access_token,
                     'status': 'PAUSED'
                 },
-                timeout=30
+                timeout=timeout
             )
             
             if response.status_code == 200:
@@ -560,7 +563,7 @@ class FacebookAdClient:
                             'access_token': self.access_token,
                             'fields': 'status'
                         },
-                        timeout=30
+                        timeout=timeout
                     )
                     
                     if verification_response.status_code == 200:
@@ -635,7 +638,7 @@ class FacebookAdClient:
                 req = urllib.request.Request(url, method='POST')
                 
                 try:
-                    with urllib.request.urlopen(req, timeout=30) as response:
+                    with urllib.request.urlopen(req, timeout=timeout) as response:
                         response_data = response.read().decode('utf-8')
                         logger.info(f"Объявление {ad_id} отключено через низкоуровневый API запрос: {response_data}")
                         return True
@@ -648,7 +651,7 @@ class FacebookAdClient:
             
             return False
             
-    def get_campaign_stats(self, campaign_id, fields=None, date_preset=None, time_range=None):
+    def get_campaign_stats(self, campaign_id, fields=None, date_preset=None, time_range=None, timeout=60):
         """
         Получение статистики для кампании
         
@@ -657,6 +660,7 @@ class FacebookAdClient:
             fields (list): Список полей для получения
             date_preset (str): Предустановленный временной диапазон (today, yesterday, last_7_days)
             time_range (dict): Настраиваемый временной диапазон в формате {'since': 'YYYY-MM-DD', 'until': 'YYYY-MM-DD'}
+            timeout (int): Таймаут для запросов в секундах
             
         Returns:
             dict: Данные статистики кампании
@@ -685,7 +689,7 @@ class FacebookAdClient:
             response = requests.get(
                 f'https://graph.facebook.com/v18.0/{campaign_id}/insights',
                 params=params,
-                timeout=30
+                timeout=timeout
             )
             
             if response.status_code != 200:
@@ -735,13 +739,14 @@ class FacebookAdClient:
             logger.error(f"Ошибка при получении статистики для кампании {campaign_id}: {str(e)}")
             return {'campaign_id': campaign_id, 'spend': 0}
             
-    def update_campaign_status(self, campaign_id, status):
+    def update_campaign_status(self, campaign_id, status, timeout=60):
         """
         Обновление статуса кампании
         
         Args:
             campaign_id (str): ID кампании
             status (str): Новый статус ('ACTIVE', 'PAUSED', 'ARCHIVED')
+            timeout (int): Таймаут для запросов в секундах
             
         Returns:
             bool: Результат операции
@@ -754,7 +759,7 @@ class FacebookAdClient:
                     'access_token': self.access_token,
                     'status': status
                 },
-                timeout=30
+                timeout=timeout
             )
             
             if response.status_code == 200:

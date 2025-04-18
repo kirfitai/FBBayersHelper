@@ -3,6 +3,7 @@
 """
 
 import logging
+import time
 from app.services.fb_api_client import FacebookAdClient
 
 # Настройка логирования
@@ -42,7 +43,8 @@ class FacebookAPI:
             campaign_id=campaign_id,
             fields=fields,
             date_preset=date_preset,
-            time_range=time_range
+            time_range=time_range,
+            timeout=60
         )
     
     def update_campaign_status(self, campaign_id, status):
@@ -51,7 +53,8 @@ class FacebookAPI:
         """
         return self.client.update_campaign_status(
             campaign_id=campaign_id,
-            status=status
+            status=status,
+            timeout=60
         )
         
     def get_ads_in_campaign(self, campaign_id):
@@ -65,37 +68,67 @@ class FacebookAPI:
             list: Список объектов объявлений
         """
         logger.info(f"FacebookAPI: Запрос объявлений для кампании {campaign_id}")
-        ads = self.client.get_ads_in_campaign(campaign_id)
         
-        # Проверяем, получили ли мы объявления
-        if not ads:
-            logger.warning(f"FacebookAPI: Не получены объявления для кампании {campaign_id}")
-            return []
-            
-        logger.info(f"FacebookAPI: Получено {len(ads)} объявлений для кампании {campaign_id}")
+        # Максимальное количество попыток
+        max_retries = 3
+        retry_delay = 5  # секунды между попытками
+        current_retry = 0
         
-        # Убеждаемся, что объекты объявлений содержат все необходимые атрибуты
-        for ad in ads:
-            # Проверяем наличие атрибута status, если его нет - устанавливаем значение по умолчанию
-            if not hasattr(ad, 'status') and hasattr(ad, 'effective_status'):
-                setattr(ad, 'status', getattr(ad, 'effective_status'))
-            elif not hasattr(ad, 'status'):
-                setattr(ad, 'status', 'UNKNOWN')
+        while current_retry < max_retries:
+            try:
+                # Увеличиваем таймаут при повторных попытках
+                timeout = 60 + (current_retry * 30)  # 60, 90, 120 секунд
+                logger.info(f"FacebookAPI: Попытка {current_retry+1}/{max_retries} с таймаутом {timeout} секунд")
                 
-            # Проверяем наличие атрибута id
-            if not hasattr(ad, 'id') and hasattr(ad, '_data') and 'id' in ad._data:
-                setattr(ad, 'id', ad._data['id'])
+                # Передаем таймаут в клиент
+                ads = self.client.get_ads_in_campaign(campaign_id, timeout=timeout)
                 
-            # Проверяем наличие атрибута name
-            if not hasattr(ad, 'name') and hasattr(ad, '_data') and 'name' in ad._data:
-                setattr(ad, 'name', ad._data['name'])
+                # Проверяем, получили ли мы объявления
+                if not ads:
+                    logger.warning(f"FacebookAPI: Не получены объявления для кампании {campaign_id} в попытке {current_retry+1}")
+                    current_retry += 1
+                    if current_retry < max_retries:
+                        logger.info(f"FacebookAPI: Ожидание {retry_delay} секунд перед следующей попыткой...")
+                        time.sleep(retry_delay)
+                        continue
+                    else:
+                        logger.error(f"FacebookAPI: Все попытки исчерпаны, объявления не получены")
+                        return []
+                    
+                logger.info(f"FacebookAPI: Получено {len(ads)} объявлений для кампании {campaign_id}")
                 
-        # Возвращаем список объявлений
-        active_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'ACTIVE')
-        paused_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'PAUSED')
-        logger.info(f"FacebookAPI: Активных объявлений: {active_count}, отключенных: {paused_count}")
-        
-        return ads
+                # Убеждаемся, что объекты объявлений содержат все необходимые атрибуты
+                for ad in ads:
+                    # Проверяем наличие атрибута status, если его нет - устанавливаем значение по умолчанию
+                    if not hasattr(ad, 'status') and hasattr(ad, 'effective_status'):
+                        setattr(ad, 'status', getattr(ad, 'effective_status'))
+                    elif not hasattr(ad, 'status'):
+                        setattr(ad, 'status', 'UNKNOWN')
+                        
+                    # Проверяем наличие атрибута id
+                    if not hasattr(ad, 'id') and hasattr(ad, '_data') and 'id' in ad._data:
+                        setattr(ad, 'id', ad._data['id'])
+                    
+                    # Проверяем наличие атрибута name
+                    if not hasattr(ad, 'name') and hasattr(ad, '_data') and 'name' in ad._data:
+                        setattr(ad, 'name', ad._data['name'])
+                        
+                # Возвращаем список объявлений
+                active_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'ACTIVE')
+                paused_count = sum(1 for ad in ads if getattr(ad, 'status', None) == 'PAUSED')
+                logger.info(f"FacebookAPI: Активных объявлений: {active_count}, отключенных: {paused_count}")
+                
+                return ads
+                
+            except Exception as e:
+                current_retry += 1
+                logger.error(f"FacebookAPI: Ошибка при получении объявлений (попытка {current_retry}/{max_retries}): {str(e)}")
+                if current_retry < max_retries:
+                    logger.info(f"FacebookAPI: Ожидание {retry_delay} секунд перед следующей попыткой...")
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(f"FacebookAPI: Все попытки исчерпаны, ошибка: {str(e)}")
+                    return []
     
     def get_ad_insights(self, ad_id, date_preset=None, time_range=None):
         """
@@ -131,7 +164,8 @@ class FacebookAPI:
                 import requests
                 import json
                 
-                response = requests.get(url, params=params, timeout=30)
+                # Увеличиваем таймаут для запроса инсайтов
+                response = requests.get(url, params=params, timeout=60)
                 if response.status_code == 200:
                     data = response.json()
                     insights = data.get('data', [])
@@ -163,7 +197,7 @@ class FacebookAPI:
         # Если time_range не указан или произошла ошибка, используем стандартный метод
         actual_date_preset = date_preset or 'today'
         logger.info(f"Используем стандартный период: {actual_date_preset}")
-        return self.client.get_ad_insights(ad_id, actual_date_preset)
+        return self.client.get_ad_insights(ad_id, actual_date_preset, timeout=60)
     
     def disable_ad(self, ad_id):
         """
@@ -176,4 +210,4 @@ class FacebookAPI:
             bool: Успешность операции
         """
         logger.info(f"FacebookAPI: Отключение объявления {ad_id}")
-        return self.client.disable_ad(ad_id) 
+        return self.client.disable_ad(ad_id, timeout=60) 
