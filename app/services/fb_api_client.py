@@ -17,6 +17,105 @@ FB_GRAPH_URL = 'https://graph.facebook.com/v18.0'
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
+# Создаем улучшенную версию requests.get и requests.post с подробным логированием
+def detailed_get(url, params=None, timeout=30, **kwargs):
+    """
+    Обертка над requests.get с детальным логированием
+    """
+    log_prefix = "[DETAILED_HTTP]"
+    # Логируем запрос
+    logger.info(f"{log_prefix} Отправка GET запроса на URL: {url}")
+    logger.info(f"{log_prefix} Параметры GET запроса: {json.dumps(params, ensure_ascii=False, indent=2)}")
+    
+    if 'headers' in kwargs:
+        safe_headers = {k: v for k, v in kwargs['headers'].items() if 'token' not in k.lower()}
+        logger.info(f"{log_prefix} Заголовки GET запроса: {json.dumps(safe_headers, ensure_ascii=False)}")
+    
+    start_time = time.time()
+    try:
+        response = requests.get(url, params=params, timeout=timeout, **kwargs)
+        elapsed = time.time() - start_time
+        
+        # Логируем ответ
+        logger.info(f"{log_prefix} GET запрос выполнен за {elapsed:.3f} секунд")
+        logger.info(f"{log_prefix} Получен ответ: Статус {response.status_code}")
+        
+        try:
+            if 'application/json' in response.headers.get('Content-Type', ''):
+                json_resp = response.json()
+                # Упрощенное логирование для больших ответов
+                if isinstance(json_resp, dict) and len(str(json_resp)) > 500:
+                    logger.info(f"{log_prefix} Получен JSON-ответ (сокращено): {str(json_resp)[:300]}...")
+                    if 'error' in json_resp:
+                        logger.error(f"{log_prefix} Ошибка в ответе: {json.dumps(json_resp.get('error'), ensure_ascii=False)}")
+                else:
+                    logger.info(f"{log_prefix} Получен JSON-ответ: {json.dumps(json_resp, ensure_ascii=False)}")
+            else:
+                logger.info(f"{log_prefix} Получен не-JSON ответ, длина: {len(response.text)} символов")
+        except Exception as json_err:
+            logger.error(f"{log_prefix} Ошибка при обработке ответа: {str(json_err)}")
+            
+        return response
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"{log_prefix} Ошибка GET запроса после {elapsed:.3f} секунд: {str(e)}")
+        raise
+
+def detailed_post(url, data=None, json=None, params=None, timeout=30, **kwargs):
+    """
+    Обертка над requests.post с детальным логированием
+    """
+    log_prefix = "[DETAILED_HTTP]"
+    # Логируем запрос
+    logger.info(f"{log_prefix} Отправка POST запроса на URL: {url}")
+    
+    if params:
+        logger.info(f"{log_prefix} Параметры URL POST запроса: {json.dumps(params, ensure_ascii=False, indent=2)}")
+    
+    if data:
+        try:
+            data_str = data if isinstance(data, str) else json.dumps(data, ensure_ascii=False)
+            logger.info(f"{log_prefix} Данные POST запроса (data): {data_str}")
+        except Exception as data_err:
+            logger.info(f"{log_prefix} Данные POST запроса (data): {str(data)[:500]}")
+    
+    if json:
+        logger.info(f"{log_prefix} Данные POST запроса (json): {json.dumps(json, ensure_ascii=False, indent=2)}")
+    
+    if 'headers' in kwargs:
+        safe_headers = {k: v for k, v in kwargs['headers'].items() if 'token' not in k.lower()}
+        logger.info(f"{log_prefix} Заголовки POST запроса: {safe_headers}")
+    
+    start_time = time.time()
+    try:
+        response = requests.post(url, data=data, json=json, params=params, timeout=timeout, **kwargs)
+        elapsed = time.time() - start_time
+        
+        # Логируем ответ
+        logger.info(f"{log_prefix} POST запрос выполнен за {elapsed:.3f} секунд")
+        logger.info(f"{log_prefix} Получен ответ: Статус {response.status_code}")
+        
+        try:
+            if 'application/json' in response.headers.get('Content-Type', ''):
+                json_resp = response.json()
+                # Упрощенное логирование для больших ответов
+                if isinstance(json_resp, dict) and len(str(json_resp)) > 500:
+                    logger.info(f"{log_prefix} Получен JSON-ответ (сокращено): {str(json_resp)[:300]}...")
+                    if 'error' in json_resp:
+                        logger.error(f"{log_prefix} Ошибка в ответе: {json.dumps(json_resp.get('error'), ensure_ascii=False)}")
+                else:
+                    logger.info(f"{log_prefix} Получен JSON-ответ: {json.dumps(json_resp, ensure_ascii=False)}")
+            else:
+                logger.info(f"{log_prefix} Получен не-JSON ответ, длина: {len(response.text)} символов")
+        except Exception as json_err:
+            logger.error(f"{log_prefix} Ошибка при обработке ответа: {str(json_err)}")
+            
+        return response
+    except Exception as e:
+        elapsed = time.time() - start_time
+        logger.error(f"{log_prefix} Ошибка POST запроса после {elapsed:.3f} секунд: {str(e)}")
+        raise
+
 class FacebookAdClient:
     def __init__(self, access_token=None, app_id=None, app_secret=None, ad_account_id=None, token_obj=None):
         """
@@ -121,12 +220,12 @@ class FacebookAdClient:
             logger.info(f"Прямой запрос кампаний для аккаунта {self.ad_account_id}")
             
             # Выполняем начальный запрос
-            url = f'https://graph.facebook.com/v18.0/{self.ad_account_id}/campaigns'
+            url = f'{FB_GRAPH_URL}/{self.ad_account_id}/campaigns'
             
             while url and len(all_campaigns) < limit:
                 logger.info(f"Запрашиваем страницу: {url}")
                 
-                response = requests.get(
+                response = detailed_get(
                     url,
                     params=api_params if next_url is None else {},  # Используем параметры только для первого запроса
                     timeout=30
@@ -235,7 +334,7 @@ class FacebookAdClient:
                         'limit': 500  # Увеличенное количество объявлений в одном запросе
                     }
                     
-                    response = requests.get(url, params=params, timeout=current_timeout)
+                    response = detailed_get(url, params=params, timeout=current_timeout)
                     
                     if response.status_code == 200:
                         ads_data = response.json().get('data', [])
@@ -322,7 +421,7 @@ class FacebookAdClient:
             
         except Exception as e:
             logger.error(f"[FacebookAdClient] Критическая ошибка при получении объявлений: {str(e)}")
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             return []
     
     def get_ad_insights(self, ad_id, date_preset='today', time_range=None, fields=None, timeout=120):
@@ -370,7 +469,7 @@ class FacebookAdClient:
                         params['date_preset'] = date_preset
                         
                     # Делаем GET запрос с увеличенным таймаутом
-                    response = requests.get(url, params=params, timeout=current_timeout)
+                    response = detailed_get(url, params=params, timeout=current_timeout)
                     
                     if response.status_code == 200:
                         data = response.json()
@@ -457,7 +556,7 @@ class FacebookAdClient:
             
         except Exception as e:
             logger.error(f"[FacebookAdClient] Критическая ошибка при получении статистики: {str(e)}")
-            logger.debug(traceback.format_exc())
+            logger.error(traceback.format_exc())
             return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
     
     def disable_ad(self, ad_id, timeout=60):
@@ -476,8 +575,8 @@ class FacebookAdClient:
         # Сначала проверяем текущий статус объявления
         try:
             # Получаем информацию о текущем статусе объявления
-            ad_info_response = requests.get(
-                f'https://graph.facebook.com/v18.0/{ad_id}',
+            ad_info_response = detailed_get(
+                f'{FB_GRAPH_URL}/{ad_id}',
                 params={
                     'access_token': self.access_token,
                     'fields': 'status,name'
@@ -502,8 +601,8 @@ class FacebookAdClient:
         
         # Пробуем отключить объявление через прямой API запрос
         try:
-            response = requests.post(
-                f'https://graph.facebook.com/v18.0/{ad_id}',
+            response = detailed_post(
+                f'{FB_GRAPH_URL}/{ad_id}',
                 params={
                     'access_token': self.access_token,
                     'status': 'PAUSED'
@@ -516,8 +615,8 @@ class FacebookAdClient:
                 
                 # Проверяем, что объявление действительно отключено
                 try:
-                    verification_response = requests.get(
-                        f'https://graph.facebook.com/v18.0/{ad_id}',
+                    verification_response = detailed_get(
+                        f'{FB_GRAPH_URL}/{ad_id}',
                         params={
                             'access_token': self.access_token,
                             'fields': 'status'
@@ -593,7 +692,7 @@ class FacebookAdClient:
                 import urllib.parse
                 import urllib.error
                 
-                url = f'https://graph.facebook.com/v18.0/{ad_id}?access_token={self.access_token}&status=PAUSED'
+                url = f'{FB_GRAPH_URL}/{ad_id}?access_token={self.access_token}&status=PAUSED'
                 req = urllib.request.Request(url, method='POST')
                 
                 try:
@@ -645,8 +744,8 @@ class FacebookAdClient:
                 
             # Выполняем прямой запрос к API
             logger.info(f"Запрос статистики для кампании {campaign_id}")
-            response = requests.get(
-                f'https://graph.facebook.com/v18.0/{campaign_id}/insights',
+            response = detailed_get(
+                f'{FB_GRAPH_URL}/{campaign_id}/insights',
                 params=params,
                 timeout=timeout
             )
@@ -712,8 +811,8 @@ class FacebookAdClient:
         """
         try:
             # Сначала пробуем прямой API запрос
-            response = requests.post(
-                f'https://graph.facebook.com/v18.0/{campaign_id}',
+            response = detailed_post(
+                f'{FB_GRAPH_URL}/{campaign_id}',
                 params={
                     'access_token': self.access_token,
                     'status': status

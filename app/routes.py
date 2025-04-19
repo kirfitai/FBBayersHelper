@@ -477,6 +477,21 @@ def toggle_campaign_setup(id):
 @bp.route('/campaigns/setup/<int:id>/check', methods=['POST'])
 @login_required
 def check_campaign_setup(id):
+    # Подробное логирование входящего запроса
+    logger.info(f"[HTTP_REQUEST] Получен POST-запрос на проверку кампании, ID: {id}")
+    logger.info(f"[HTTP_REQUEST] Заголовки запроса: {dict(request.headers)}")
+    logger.info(f"[HTTP_REQUEST] Форма запроса: {request.form}")
+    logger.info(f"[HTTP_REQUEST] Аргументы запроса: {request.args}")
+    logger.info(f"[HTTP_REQUEST] Cookies: {request.cookies}")
+    logger.info(f"[HTTP_REQUEST] Данные сессии: {dict(session)}")
+    
+    # Проверка CSRF токена
+    csrf_token = request.form.get('csrf_token')
+    if not csrf_token:
+        logger.error("[HTTP_REQUEST] CSRF токен отсутствует в форме")
+    else:
+        logger.info(f"[HTTP_REQUEST] CSRF токен в форме: {csrf_token[:10]}...")
+
     campaign_setup = CampaignSetup.query.filter_by(
         id=id, user_id=current_user.id
     ).first_or_404()
