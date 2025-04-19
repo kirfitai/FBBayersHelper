@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session, Response, send_file, abort
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.user import User
@@ -17,6 +17,8 @@ from pathlib import Path
 import os
 import glob
 from markupsafe import Markup
+from flask_wtf.csrf import generate_csrf
+from app import csrf
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -1083,26 +1085,20 @@ def add_test_conversion():
     # Возвращаемся на страницу списка конверсий
     return redirect(url_for('main.conversions_list'))
 
-@bp.route('/api/conversion/test', methods=['GET'])
-def api_test_conversion():
-    """Добавляет тестовую конверсию для проверки функциональности API"""
-    # Создаем тестовую запись о конверсии
+@bp.route('/api/conversion/test', methods=['POST'])
+@login_required
+def api_conversion_test():
+    # Create new conversion
     conversion = Conversion(
-        ref='test123',
-        form_id='test_form_id',
-        quid='test_quid',
-        ip_address=request.remote_addr,
-        user_agent=request.user_agent.string if request.user_agent else None
+        ref="TEST_CONVERSION",
+        timestamp=datetime.utcnow(),
+        form_id="test",
+        ip_address=request.remote_addr or "",
+        user_agent=request.user_agent.string if request.user_agent else "",
     )
-    
     db.session.add(conversion)
     db.session.commit()
-    
-    return jsonify({
-        'success': True, 
-        'id': conversion.id,
-        'message': 'Тестовая конверсия успешно добавлена'
-    }), 201
+    return jsonify({"success": True, "message": "Тестовая конверсия добавлена"})
 
 @bp.route('/conversions/prefix/<string:ref_prefix>', methods=['GET'])
 @login_required
@@ -1184,3 +1180,10 @@ def conversions_by_prefix(ref_prefix):
         logger.error(f"Ошибка при отображении статистики по префиксу {ref_prefix}: {str(e)}")
         flash(f'Произошла ошибка при загрузке статистики: {str(e)}', 'danger')
         return redirect(url_for('main.conversions_list', ref_prefix=ref_prefix))
+
+# Маршрут для обновления CSRF токена
+@bp.route('/api/refresh-csrf', methods=['GET'])
+def refresh_csrf():
+    """API эндпоинт для обновления CSRF токена"""
+    # Возвращаем новый CSRF токен
+    return jsonify(success=True, csrf_token=generate_csrf())

@@ -96,6 +96,9 @@
     <!-- Bootstrap JS и зависимости -->
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- CSRF Token Refresher -->
+    <script src="{{ url_for('static', filename='js/csrf_refresher.js') }}"></script>
+    
     {% block scripts %}{% endblock %}
 </body>
 </html>
