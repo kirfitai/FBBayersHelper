@@ -143,13 +143,27 @@ class FacebookAPI:
             if ads:
                 logger.info(f"[FacebookAPI] Получено {len(ads)} объявлений в кампании {campaign_id}")
                 
-                # Проверяем наличие необходимых атрибутов
-                active_count = sum(1 for ad in ads if hasattr(ad, 'status') and ad.status == 'ACTIVE')
-                logger.info(f"[FacebookAPI] Активных объявлений: {active_count}")
+                # Преобразуем объекты SimpleNamespace в словари для удобства использования
+                processed_ads = []
+                for ad in ads:
+                    if hasattr(ad, 'id'):
+                        ad_dict = {
+                            'id': ad.id,
+                            'name': ad.name if hasattr(ad, 'name') else 'Без имени',
+                            'status': ad.status if hasattr(ad, 'status') else 'UNKNOWN',
+                            'effective_status': ad.effective_status if hasattr(ad, 'effective_status') else 'UNKNOWN'
+                        }
+                        processed_ads.append(ad_dict)
+                
+                # Проверяем наличие необходимых атрибутов и считаем активные объявления
+                active_count = sum(1 for ad in processed_ads if ad['effective_status'] == 'ACTIVE')
+                logger.info(f"[FacebookAPI] Активных объявлений (effective_status=ACTIVE): {active_count}")
+                
+                return processed_ads
             else:
                 logger.warning(f"[FacebookAPI] Нет объявлений в кампании {campaign_id}")
                 
-            return ads
+            return []
         except Exception as e:
             logger.error(f"[FacebookAPI] Ошибка при получении объявлений для кампании {campaign_id}: {str(e)}")
             logger.error(traceback.format_exc())
@@ -174,7 +188,7 @@ class FacebookAPI:
             logger.info(f"[FacebookAPI] Вызов client.get_ad_insights для объявления {ad_id}")
             insights = self.client.get_ad_insights(
                 ad_id, 
-                date_preset=date_preset,
+                date_preset=None if time_range else date_preset,  # Если задан time_range, не используем date_preset
                 time_range=time_range,
                 timeout=timeout
             )

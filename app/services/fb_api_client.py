@@ -327,14 +327,14 @@ class FacebookAdClient:
                     current_timeout = timeout + (current_attempt - 1) * 30
                     logger.info(f"[FacebookAdClient] Попытка {current_attempt}/{max_attempts} с таймаутом {current_timeout}с")
                     
-                    url = f"{FB_GRAPH_URL}/{campaign_id}/ads"
-                    params = {
-                        'access_token': self.access_token,
-                        'fields': 'id,name,status,effective_status',
-                        'limit': 500  # Увеличенное количество объявлений в одном запросе
-                    }
+                    # Формируем URL с параметрами напрямую в адресной строке
+                    fields = "id,name,status,effective_status"
+                    full_url = f"{FB_GRAPH_URL}/{campaign_id}/ads?fields={fields}&limit=500&access_token={self.access_token}"
                     
-                    response = detailed_get(url, params=params, timeout=current_timeout)
+                    logger.info(f"[FacebookAdClient] Запрос на URL: {full_url.replace(self.access_token, 'ACCESS_TOKEN_HIDDEN')}")
+                    
+                    # Отправляем запрос напрямую
+                    response = requests.get(full_url, timeout=current_timeout)
                     
                     if response.status_code == 200:
                         ads_data = response.json().get('data', [])
@@ -342,14 +342,24 @@ class FacebookAdClient:
                         if ads_data:
                             logger.info(f"[FacebookAdClient] Получено {len(ads_data)} объявлений")
                             
+                            # Логируем первые несколько объявлений для отладки
+                            logger.info(f"[FacebookAdClient] Пример данных: {str(ads_data[:2])}")
+                            
                             # Создаем объекты для каждого объявления
                             ads = []
+                            active_count = 0
                             for ad_data in ads_data:
                                 try:
                                     ad = SimpleNamespace()
                                     ad.id = ad_data.get('id')
                                     ad.name = ad_data.get('name')
-                                    ad.status = ad_data.get('status') or ad_data.get('effective_status', 'UNKNOWN')
+                                    ad.status = ad_data.get('status', 'UNKNOWN')
+                                    ad.effective_status = ad_data.get('effective_status', 'UNKNOWN')
+                                    
+                                    # Определяем активность объявления по effective_status
+                                    # Это более точный показатель фактического статуса объявления
+                                    if ad.effective_status == 'ACTIVE':
+                                        active_count += 1
                                     
                                     if hasattr(ad, 'id') and ad.id:
                                         ads.append(ad)
@@ -358,6 +368,7 @@ class FacebookAdClient:
                                 except Exception as ad_error:
                                     logger.error(f"[FacebookAdClient] Ошибка при обработке объявления: {str(ad_error)}")
                             
+                            logger.info(f"[FacebookAdClient] Всего активных объявлений (effective_status=ACTIVE): {active_count}")
                             return ads
                         else:
                             logger.warning(f"[FacebookAdClient] Нет объявлений в ответе API для кампании {campaign_id}")
@@ -369,6 +380,9 @@ class FacebookAdClient:
                                 continue
                             return []
                     else:
+                        # Логируем полный ответ для отладки
+                        logger.error(f"[FacebookAdClient] Ответ API с кодом {response.status_code}: {response.text}")
+                        
                         # Проверяем код ошибки на превышение лимита
                         try:
                             error_data = response.json().get('error', {})

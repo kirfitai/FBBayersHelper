@@ -151,16 +151,31 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
             
         # Для каждого объявления в кампании
         for ad in ads_in_campaign:
-            ad_id = ad.get('id')
-            ad_name = ad.get('name', 'Без имени')
-            ad_status = ad.get('status', 'UNKNOWN')
+            # Для совместимости проверяем формат данных (объект или словарь)
+            if isinstance(ad, dict):
+                ad_id = ad.get('id')
+                ad_name = ad.get('name', 'Без имени')
+                ad_status = ad.get('effective_status', 'UNKNOWN')  # Используем effective_status как более точный
+            else:
+                # Если это объект
+                ad_id = ad.id if hasattr(ad, 'id') else None
+                ad_name = ad.name if hasattr(ad, 'name') else 'Без имени'
+                
+                # Приоритет отдаем effective_status
+                if hasattr(ad, 'effective_status'):
+                    ad_status = ad.effective_status
+                elif hasattr(ad, 'status'):
+                    ad_status = ad.status
+                else:
+                    ad_status = 'UNKNOWN'
             
             # Получаем только активные объявления
             if ad_status != 'ACTIVE':
+                logger.info(f"Объявление {ad_id} ({ad_name}) не активно (статус: {ad_status}), пропускаем")
                 continue
                 
             # Получаем статистику для объявления за указанный период
-            insights = fb_api.get_ad_insights(ad_id, date_range)
+            insights = fb_api.get_ad_insights(ad_id, time_range=date_range)
             if not insights:
                 logger.warning(f"Нет данных по расходам для объявления {ad_id}")
                 continue
