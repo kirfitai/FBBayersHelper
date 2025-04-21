@@ -22,7 +22,7 @@ def calculate_date_range_for_period(check_period):
         check_period (str): Период проверки ('today', 'last2days', 'last3days', 'last7days', 'alltime')
         
     Returns:
-        tuple: (since_date, until_date) в формате YYYY-MM-DD
+        dict: Словарь с ключами 'since' и 'until' в формате YYYY-MM-DD
     """
     today = datetime.now().date()
     until_date = today.strftime('%Y-%m-%d')
@@ -47,7 +47,7 @@ def calculate_date_range_for_period(check_period):
         since_date = today.strftime('%Y-%m-%d')
         logger.warning(f"Неизвестный период проверки: {check_period}, используется 'today'")
     
-    return since_date, until_date
+    return {'since': since_date, 'until': until_date}
 
 def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
     """

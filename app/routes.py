@@ -494,15 +494,15 @@ def check_campaign_setup(id):
         setup = Setup.query.get(campaign_setup.setup_id)
         check_period = setup.check_period if setup else None
         
-        # Выполняем проверку и получаем детальную информацию о результатах
-        result, ads_results = check_campaign_thresholds(campaign_setup.campaign_id, check_period, return_details=True)
+        # Выполняем проверку и получаем результаты
+        results = check_campaign_thresholds(campaign_setup.campaign_id, campaign_setup.setup_id, check_period=check_period)
         
         # Обновляем время последней проверки
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
-        # Если результаты получены
-        if ads_results and len(ads_results) > 0:
+        # Если результаты получены и нет ошибок
+        if results and 'error' not in results and len(results.get('ads_results', [])) > 0:
             # Получаем набор уникальных пар (required_conversions, порог расхода)
             thresholds_pairs = []
             if setup:
@@ -512,48 +512,45 @@ def check_campaign_setup(id):
             # Формируем контекст данных для страницы проверки
             timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Получаем диапазон дат из первого объявления или используем текущую дату
-            since_date, until_date = calculate_date_range_for_period(check_period)
-            date_range = f"{since_date} - {until_date}"
+            # Форматируем результаты для шаблона
+            formatted_results = {
+                'campaign_id': results.get('campaign_id'),
+                'campaign_name': campaign_setup.campaign_name,
+                'check_period': results.get('check_period'),
+                'date_range': {
+                    'start': results.get('date_from'),
+                    'end': results.get('date_to')
+                },
+                'threshold': {
+                    'spend': results.get('setup_spend'),
+                    'conversions': results.get('setup_conversions')
+                },
+                'stats': {
+                    'total_ads_checked': results.get('ads_checked'),
+                    'ads_disabled': results.get('ads_disabled')
+                },
+                'ad_results': []
+            }
             
-            # Статистика проверки
-            successful_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and ad.get('disabled_success', False))
-            failed_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and not ad.get('disabled_success', False))
-            skipped_ads = sum(1 for ad in ads_results if ad.get('status') != 'ACTIVE')
-            
-            # Добавляем информацию о REF префиксах
-            ref_prefixes = setup.ref_prefixes.split(',') if hasattr(setup, 'ref_prefixes') and setup.ref_prefixes else []
-            ref_prefixes = [prefix.strip() for prefix in ref_prefixes if prefix.strip()]
-            
-            for ad in ads_results:
-                # Добавляем порог расхода для каждого объявления
-                for conv, spend in thresholds_pairs:
-                    if conv == ad.get('required_conversions'):
-                        ad['threshold_spend'] = spend
-                        break
-                else:
-                    ad['threshold_spend'] = 0
-                    
-                # Добавляем REF префикс (для отображения)
-                ad['ref_prefix'] = ', '.join(ref_prefixes) if ref_prefixes else '-'
+            # Преобразуем результаты для каждого объявления
+            for ad in results.get('ads_results', []):
+                formatted_results['ad_results'].append({
+                    'ad_id': ad.get('ad_id'),
+                    'name': ad.get('ad_name'),
+                    'ref': ad.get('ref'),
+                    'spend': ad.get('spend'),
+                    'conversions': ad.get('conversions'),
+                    'status': ad.get('status'),
+                    'disabled': not ad.get('passed', True),
+                    'reason': ad.get('reason')
+                })
             
             # Рендерим шаблон отчета о проверке
-            return render_template('campaigns/check_report.html',
-                campaign_id=campaign_setup.campaign_id,
-                campaign_name=campaign_setup.campaign_name,
-                period=check_period or 'today',
-                date_range=date_range,
-                timestamp=timestamp,
-                total_ads=len(ads_results),
-                successful_disabled=successful_disabled,
-                failed_disabled=failed_disabled,
-                skipped_ads=skipped_ads,
-                ads_results=ads_results,
-                thresholds=thresholds if setup else []
-            )
+            return render_template('campaigns/check_report.html', results=formatted_results)
         else:
-            # Если объявления не найдены
-            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена, но объявления не найдены.', 'warning')
+            # Если объявления не найдены или есть ошибка
+            error_message = results.get('error', 'Объявления не найдены')
+            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}": {error_message}', 'warning')
             return redirect(url_for('main.campaigns'))
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
