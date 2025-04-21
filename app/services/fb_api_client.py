@@ -469,38 +469,56 @@ class FacebookAdClient:
                     
                     logger.info(f"[FacebookAdClient] Попытка {current_attempt}/{max_attempts} с таймаутом {current_timeout}с")
                     
-                    # Формируем URL и параметры
-                    url = f"{FB_GRAPH_URL}/{ad_id}/insights"
-                    params = {
-                        'access_token': self.access_token,
-                        'fields': ','.join(fields)
-                    }
+                    # Обязательная пауза между запросами для соблюдения лимитов API
+                    # Чем больше попыток, тем дольше пауза
+                    if current_attempt > 1:
+                        pause_time = 2 * current_attempt
+                        logger.info(f"[FacebookAdClient] Пауза {pause_time} секунд перед запросом для соблюдения лимитов API")
+                        time.sleep(pause_time)
                     
-                    # Устанавливаем период
+                    # Формируем URL с параметрами напрямую в адресной строке
+                    fields_param = ','.join(fields)
+                    base_url = f"{FB_GRAPH_URL}/{ad_id}/insights?fields={fields_param}"
+                    
                     if time_range:
-                        params['time_range'] = json.dumps(time_range)
+                        # Преобразуем time_range в JSON строку и экранируем для URL
+                        import urllib.parse
+                        time_range_json = json.dumps(time_range)
+                        time_range_param = urllib.parse.quote(time_range_json)
+                        url = f"{base_url}&time_range={time_range_param}&access_token={self.access_token}"
                     else:
-                        params['date_preset'] = date_preset
-                        
-                    # Делаем GET запрос с увеличенным таймаутом
-                    response = detailed_get(url, params=params, timeout=current_timeout)
+                        # Используем date_preset
+                        url = f"{base_url}&date_preset={date_preset}&access_token={self.access_token}"
+                    
+                    logger.info(f"[FacebookAdClient] Запрос на URL: {url.replace(self.access_token, 'ACCESS_TOKEN_HIDDEN')}")
+                    
+                    # Отправляем запрос напрямую
+                    response = requests.get(url, timeout=current_timeout)
                     
                     if response.status_code == 200:
                         data = response.json()
                         insights_data = data.get('data', [])
                         
+                        # Логируем ответ для отладки (без конфиденциальной информации)
+                        logger.info(f"[FacebookAdClient] Ответ API: {json.dumps(data)[:500]}...")
+                        
                         if insights_data and len(insights_data) > 0:
-                            # Обрабатываем результаты
-                            result = {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
+                            # Обрабатываем результаты - берем первый элемент из массива data
+                            first_insight = insights_data[0]
                             
-                            # Извлекаем расходы
-                            if 'spend' in insights_data[0]:
-                                result['spend'] = float(insights_data[0]['spend'])
-                                
-                            # Проверяем действия и считаем конверсии если есть
-                            if 'actions' in insights_data[0]:
+                            # Создаем результат с ключевыми полями
+                            result = {
+                                'ad_id': ad_id,
+                                'spend': float(first_insight.get('spend', 0)),
+                                'date_start': first_insight.get('date_start'),
+                                'date_stop': first_insight.get('date_stop'),
+                                'conversions': 0  # По умолчанию ставим 0 конверсий
+                            }
+                            
+                            # Если есть actions, считаем конверсии
+                            if 'actions' in first_insight:
                                 conversion_types = ['purchase', 'web_in_store_purchase', 'onsite_web_app_purchase']
-                                for action in insights_data[0]['actions']:
+                                for action in first_insight['actions']:
                                     if action.get('action_type') in conversion_types:
                                         result['conversions'] += int(action.get('value', 0))
                                         
@@ -515,8 +533,17 @@ class FacebookAdClient:
                                 time.sleep(1 * current_attempt)
                                 continue
                                 
-                            # Возвращаем пустой результат с нулевыми значениями
-                            return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
+                            # Возвращаем пустой результат с датами из запроса
+                            if time_range:
+                                return {
+                                    'ad_id': ad_id, 
+                                    'spend': 0, 
+                                    'conversions': 0,
+                                    'date_start': time_range.get('since'),
+                                    'date_stop': time_range.get('until')
+                                }
+                            else:
+                                return {'ad_id': ad_id, 'spend': 0, 'conversions': 0}
                     else:
                         # Проверяем код ошибки на превышение лимита
                         try:
@@ -586,72 +613,31 @@ class FacebookAdClient:
         """
         logger.info(f"Попытка отключения объявления {ad_id}")
         
-        # Сначала проверяем текущий статус объявления
-        try:
-            # Получаем информацию о текущем статусе объявления
-            ad_info_response = detailed_get(
-                f'{FB_GRAPH_URL}/{ad_id}',
-                params={
-                    'access_token': self.access_token,
-                    'fields': 'status,name'
-                },
-                timeout=timeout
-            )
-            
-            if ad_info_response.status_code == 200:
-                ad_info = ad_info_response.json()
-                current_status = ad_info.get('status')
-                ad_name = ad_info.get('name', 'Неизвестное имя')
-                
-                if current_status == 'PAUSED':
-                    logger.info(f"Объявление {ad_id} ({ad_name}) уже отключено (статус: {current_status})")
-                    return True
-                
-                logger.info(f"Текущий статус объявления {ad_id} ({ad_name}): {current_status}")
-            else:
-                logger.warning(f"Не удалось получить информацию об объявлении {ad_id}: {ad_info_response.status_code} - {ad_info_response.text}")
-        except Exception as e:
-            logger.warning(f"Ошибка при проверке статуса объявления {ad_id}: {str(e)}")
+        # Добавляем небольшую паузу перед отключением
+        pause_time = 1
+        logger.info(f"Пауза {pause_time} секунд перед запросом на отключение")
+        time.sleep(pause_time)
         
-        # Пробуем отключить объявление через прямой API запрос
+        # Формируем URL с параметрами напрямую
+        url = f"{FB_GRAPH_URL}/{ad_id}?status=PAUSED&access_token={self.access_token}"
+        logger.info(f"Отправка запроса на URL: {url.replace(self.access_token, 'ACCESS_TOKEN_HIDDEN')}")
+        
         try:
-            response = detailed_post(
-                f'{FB_GRAPH_URL}/{ad_id}',
-                params={
-                    'access_token': self.access_token,
-                    'status': 'PAUSED'
-                },
-                timeout=timeout
-            )
+            # Отправляем POST запрос напрямую
+            response = requests.post(url, timeout=timeout)
             
             if response.status_code == 200:
-                logger.info(f"Объявление {ad_id} отключено через прямой API запрос")
+                response_data = response.json()
+                logger.info(f"Ответ API на отключение: {response_data}")
                 
-                # Проверяем, что объявление действительно отключено
-                try:
-                    verification_response = detailed_get(
-                        f'{FB_GRAPH_URL}/{ad_id}',
-                        params={
-                            'access_token': self.access_token,
-                            'fields': 'status'
-                        },
-                        timeout=timeout
-                    )
-                    
-                    if verification_response.status_code == 200:
-                        verification_data = verification_response.json()
-                        if verification_data.get('status') == 'PAUSED':
-                            logger.info(f"Подтверждено отключение объявления {ad_id}")
-                            return True
-                        else:
-                            logger.warning(f"Объявление {ad_id} не было отключено, текущий статус: {verification_data.get('status')}")
-                    else:
-                        logger.warning(f"Не удалось проверить статус объявления после отключения: {verification_response.status_code}")
-                except Exception as ve:
-                    logger.warning(f"Ошибка при проверке статуса после отключения: {str(ve)}")
-                
-                # Если не смогли проверить, но запрос прошел успешно, считаем что объявление отключено
-                return True
+                # Проверяем success в ответе
+                if response_data.get('success'):
+                    logger.info(f"Объявление {ad_id} успешно отключено")
+                    return True
+                else:
+                    logger.warning(f"API вернул успешный ответ, но без success=true: {response_data}")
+                    # Считаем успешным, если получили код 200
+                    return True
             else:
                 error_message = response.text
                 logger.warning(f"Ошибка API при отключении объявления: {response.status_code} - {error_message}")
@@ -662,10 +648,15 @@ class FacebookAdClient:
                     error_code = error_data.get('error', {}).get('code')
                     error_message = error_data.get('error', {}).get('message')
                     
+                    # Проверяем код ошибки на превышение лимита
+                    if error_code in [17, 4] or (error_message and 'limit' in error_message.lower()):
+                        logger.warning(f"Превышен лимит запросов к API: {error_message}")
+                        # Делаем паузу и пробуем еще раз
+                        time.sleep(10)
+                        return self.disable_ad(ad_id, timeout)
+                        
                     if error_code == 190:
                         logger.error(f"Ошибка авторизации (недействительный токен): {error_message}")
-                    elif error_code == 10:
-                        logger.error(f"Превышен лимит запросов API: {error_message}")
                     elif error_code == 100:
                         logger.error(f"Объявление не найдено: {error_message}")
                     else:
@@ -673,56 +664,14 @@ class FacebookAdClient:
                 except Exception:
                     logger.error(f"Не удалось распознать ошибку: {error_message}")
                 
-                # Продолжаем и пробуем через SDK
-        except Exception as api_error:
-            logger.warning(f"Ошибка при прямом запросе на отключение: {str(api_error)}")
-            # Продолжаем и пробуем через SDK
-        
-        # Если прямой API запрос не сработал, пробуем через SDK
-        try:
-            from facebook_business.adobjects.ad import Ad
-            
-            ad = Ad(ad_id)
-            ad.api = self.api  # Устанавливаем API
-            
-            result = ad.api_update(
-                params={
-                    'status': 'PAUSED',
-                }
-            )
-            
-            if result:
-                logger.info(f"Объявление {ad_id} отключено через SDK")
-                return True
-            else:
-                logger.error(f"Не удалось отключить объявление {ad_id} через SDK")
                 return False
-        except Exception as e:
-            logger.error(f"Ошибка при отключении объявления {ad_id} через SDK: {str(e)}")
-            
-            # Последняя попытка - попробуем использовать низкоуровневый API запрос
-            try:
-                import urllib.request
-                import urllib.parse
-                import urllib.error
-                
-                url = f'{FB_GRAPH_URL}/{ad_id}?access_token={self.access_token}&status=PAUSED'
-                req = urllib.request.Request(url, method='POST')
-                
-                try:
-                    with urllib.request.urlopen(req, timeout=timeout) as response:
-                        response_data = response.read().decode('utf-8')
-                        logger.info(f"Объявление {ad_id} отключено через низкоуровневый API запрос: {response_data}")
-                        return True
-                except urllib.error.HTTPError as e:
-                    logger.error(f"Ошибка HTTP при низкоуровневом запросе: {e.code} - {e.reason}")
-                except urllib.error.URLError as e:
-                    logger.error(f"Ошибка URL при низкоуровневом запросе: {e.reason}")
-            except Exception as low_level_error:
-                logger.error(f"Ошибка при низкоуровневом запросе: {str(low_level_error)}")
-            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Ошибка сети при отключении объявления {ad_id}: {str(e)}")
             return False
-            
+        except Exception as e:
+            logger.error(f"Неожиданная ошибка при отключении объявления {ad_id}: {str(e)}")
+            return False
+    
     def get_campaign_stats(self, campaign_id, fields=None, date_preset=None, time_range=None, timeout=60):
         """
         Получение статистики для кампании

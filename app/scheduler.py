@@ -132,7 +132,6 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
         results['date_from'] = date_range['since']
         results['date_to'] = date_range['until']
         
-        # Создаем экземпляр API Facebook
         # Получаем активный токен из базы данных
         token = FacebookToken.query.filter_by(status='valid').first()
         if not token:
@@ -141,54 +140,51 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
             results['error'] = error_msg
             return results
             
+        # Создаем экземпляр API Facebook
         fb_api = FacebookAPI(token.access_token)
         
-        # Получаем объявления в кампании
+        # ЭТАП 1: Получаем объявления в кампании
+        logger.info(f"ЭТАП 1: Получение списка объявлений для кампании {campaign_id}")
         ads_in_campaign = fb_api.get_ads_in_campaign(campaign_id)
         if not ads_in_campaign:
             results['error'] = f"Не найдены объявления в кампании {campaign_id}"
             return results
-            
-        # Для каждого объявления в кампании
+        
+        # Фильтруем только активные объявления
+        active_ads = []
         for ad in ads_in_campaign:
-            # Для совместимости проверяем формат данных (объект или словарь)
+            # Для словарей
+            if isinstance(ad, dict):
+                if ad.get('effective_status') == 'ACTIVE':
+                    active_ads.append(ad)
+            # Для объектов
+            elif hasattr(ad, 'effective_status') and ad.effective_status == 'ACTIVE':
+                active_ads.append(ad)
+            elif hasattr(ad, 'status') and ad.status == 'ACTIVE':
+                active_ads.append(ad)
+        
+        logger.info(f"Найдено {len(active_ads)} активных объявлений из {len(ads_in_campaign)}")
+        
+        # ЭТАП 2: Получаем конверсии и формируем список для работы
+        logger.info(f"ЭТАП 2: Получение данных о конверсиях и формирование рабочего списка")
+        ads_data = []
+        for ad in active_ads:
+            # Получаем данные об объявлении в зависимости от формата
             if isinstance(ad, dict):
                 ad_id = ad.get('id')
                 ad_name = ad.get('name', 'Без имени')
-                ad_status = ad.get('effective_status', 'UNKNOWN')  # Используем effective_status как более точный
+                ad_status = ad.get('effective_status', 'UNKNOWN')
             else:
-                # Если это объект
                 ad_id = ad.id if hasattr(ad, 'id') else None
                 ad_name = ad.name if hasattr(ad, 'name') else 'Без имени'
-                
-                # Приоритет отдаем effective_status
-                if hasattr(ad, 'effective_status'):
-                    ad_status = ad.effective_status
-                elif hasattr(ad, 'status'):
-                    ad_status = ad.status
-                else:
-                    ad_status = 'UNKNOWN'
+                ad_status = ad.effective_status if hasattr(ad, 'effective_status') else (ad.status if hasattr(ad, 'status') else 'UNKNOWN')
             
-            # Получаем только активные объявления
-            if ad_status != 'ACTIVE':
-                logger.info(f"Объявление {ad_id} ({ad_name}) не активно (статус: {ad_status}), пропускаем")
-                continue
-                
-            # Получаем статистику для объявления за указанный период
-            insights = fb_api.get_ad_insights(ad_id, time_range=date_range)
-            if not insights:
-                logger.warning(f"Нет данных по расходам для объявления {ad_id}")
-                continue
-                
             # Парсим REF из имени объявления
             ref = None
-            if '_ref_' in ad_name:
+            if ad_name and '_ref_' in ad_name:
                 ref_parts = ad_name.split('_ref_')
                 if len(ref_parts) > 1:
                     ref = ref_parts[1].split('_')[0]
-            
-            # Получаем расход из инсайтов
-            spend = float(insights.get('spend', 0))
             
             # Получаем количество конверсий из нашей базы
             conversions_count = 0
@@ -209,14 +205,45 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
                 # Выполняем запрос с учетом всех фильтров
                 conversions_count = Conversion.query.filter(*filters).count()
             
+            # Добавляем данные в рабочий список
+            ads_data.append({
+                'ad_id': ad_id,
+                'ad_name': ad_name,
+                'ref': ref,
+                'conversions': conversions_count,
+                'status': ad_status,
+                'spend': None,  # Будет заполнено позже
+                'passed': None  # Будет заполнено позже
+            })
+        
+        # ЭТАП 3: Сортируем объявления по конверсиям (от большего к меньшему)
+        logger.info(f"ЭТАП 3: Сортировка объявлений по количеству конверсий")
+        sorted_ads = sorted(ads_data, key=lambda x: x['conversions'], reverse=True)
+        
+        # ЭТАП 4: Получаем расход для каждого объявления и проверяем условия
+        logger.info(f"ЭТАП 4: Получение данных о расходах и проверка условий")
+        for ad_data in sorted_ads:
+            ad_id = ad_data['ad_id']
+            
+            # Получаем статистику для объявления за указанный период
+            insights = fb_api.get_ad_insights(ad_id, time_range=date_range)
+            if not insights:
+                logger.warning(f"Нет данных по расходам для объявления {ad_id}")
+                ad_data['spend'] = 0
+                continue
+                
+            # Получаем расход из инсайтов
+            spend = float(insights.get('spend', 0))
+            ad_data['spend'] = spend
+            
             # Проверяем соответствие пороговым значениям
             threshold_exceeded = False
             disable_reason = None
             
             # Если расход выше порогового значения И количество конверсий меньше порогового значения
-            if spend >= threshold_spend and conversions_count < threshold_conversions:
+            if spend >= threshold_spend and ad_data['conversions'] < threshold_conversions:
                 threshold_exceeded = True
-                disable_reason = f"Расход ${spend:.2f} >= ${threshold_spend:.2f} и конверсий {conversions_count} < {threshold_conversions}"
+                disable_reason = f"Расход ${spend:.2f} >= ${threshold_spend:.2f} и конверсий {ad_data['conversions']} < {threshold_conversions}"
                 
                 # Отключаем объявление если порог превышен
                 try:
@@ -227,16 +254,20 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
                     logger.error(f"Ошибка при отключении объявления {ad_id}: {str(e)}")
                     disable_reason += f" (Ошибка отключения: {str(e)})"
             
-            # Добавляем результат проверки в список
+            # Обновляем статус проверки
+            ad_data['passed'] = not threshold_exceeded
+            ad_data['reason'] = disable_reason
+            
+            # Добавляем результат проверки в итоговый список
             ad_result = {
-                'ad_id': ad_id,
-                'ad_name': ad_name,
-                'ref': ref,
-                'spend': spend,
-                'conversions': conversions_count,
-                'status': ad_status,
-                'passed': not threshold_exceeded,
-                'reason': disable_reason
+                'ad_id': ad_data['ad_id'],
+                'ad_name': ad_data['ad_name'],
+                'ref': ad_data['ref'],
+                'spend': ad_data['spend'],
+                'conversions': ad_data['conversions'],
+                'status': ad_data['status'],
+                'passed': ad_data['passed'],
+                'reason': ad_data['reason']
             }
             
             results['ads_results'].append(ad_result)
