@@ -1,4 +1,4 @@
-app = "facebook-bayers"
+app = "fbbayershelper"
 
 [build]
   dockerfile = "Dockerfile"
@@ -9,7 +9,7 @@ app = "facebook-bayers"
   PYTHONUNBUFFERED = "1"
 
 [mounts]
-  source = "facebook_bayers_data"
+  source = "fbbayershelper_data"
   destination = "/data"
 
 [http_service]
