@@ -479,28 +479,12 @@ def toggle_campaign_setup(id):
 def check_campaign_setup(id):
     # Подробное логирование входящего запроса
     logger.info(f"[HTTP_REQUEST] Получен POST-запрос на проверку кампании, ID: {id}")
-    logger.info(f"[HTTP_REQUEST] Заголовки запроса: {dict(request.headers)}")
-    logger.info(f"[HTTP_REQUEST] Форма запроса: {request.form}")
-    logger.info(f"[HTTP_REQUEST] Аргументы запроса: {request.args}")
-    logger.info(f"[HTTP_REQUEST] Cookies: {request.cookies}")
-    logger.info(f"[HTTP_REQUEST] Данные сессии: {dict(session)}")
     
-    # Проверка CSRF токена
-    csrf_token = request.form.get('csrf_token')
-    if not csrf_token:
-        logger.error("[HTTP_REQUEST] CSRF токен отсутствует в форме")
-    else:
-        logger.info(f"[HTTP_REQUEST] CSRF токен в форме: {csrf_token[:10]}...")
-
     campaign_setup = CampaignSetup.query.filter_by(
         id=id, user_id=current_user.id
     ).first_or_404()
     
     logger.info(f"Запуск принудительной проверки для кампании {campaign_setup.campaign_id}")
-    
-    # Инициализируем массив для хранения подробных логов
-    detailed_logs = []
-    detailed_logs.append(f"Начинаем проверку кампании {campaign_setup.campaign_id} ({campaign_setup.campaign_name or 'Без имени'})")
     
     try:
         # Импортируем функцию для проверки кампаний
@@ -509,279 +493,76 @@ def check_campaign_setup(id):
         # Получаем период проверки из связанного сетапа
         setup = Setup.query.get(campaign_setup.setup_id)
         check_period = setup.check_period if setup else None
-        detailed_logs.append(f"Используем период проверки: {check_period or 'today'}")
-        
-        # Создаем свой обработчик логирования для перехвата сообщений
-        class DetailedLogHandler(logging.Handler):
-            def __init__(self, log_list):
-                super().__init__()
-                self.log_list = log_list
-                
-            def emit(self, record):
-                # Форматируем и добавляем запись логера в наш список
-                log_entry = self.format(record)
-                self.log_list.append(log_entry)
-        
-        # Создаем и добавляем обработчик для перехвата логов
-        log_handler = DetailedLogHandler(detailed_logs)
-        log_handler.setLevel(logging.INFO)
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
-        log_handler.setFormatter(formatter)
-        
-        check_logger = logging.getLogger('app.scheduler')
-        check_logger.addHandler(log_handler)
-        
-        # Сохраняем текущий уровень логирования и устанавливаем INFO, чтобы получать подробные логи
-        original_level = check_logger.level
-        check_logger.setLevel(logging.INFO)
-        
-        detailed_logs.append("Инициируем проверку кампании...")
         
         # Выполняем проверку и получаем детальную информацию о результатах
         result, ads_results = check_campaign_thresholds(campaign_setup.campaign_id, check_period, return_details=True)
-        
-        # Восстанавливаем оригинальный уровень логирования и удаляем обработчик
-        check_logger.setLevel(original_level)
-        check_logger.removeHandler(log_handler)
-        
-        detailed_logs.append(f"Проверка завершена с результатом: {'Успешно' if result else 'Ошибка'}")
         
         # Обновляем время последней проверки
         campaign_setup.last_checked = datetime.utcnow()
         db.session.commit()
         
-        # Извлекаем даты из логов для отображения
-        date_range = None
-        for log_line in detailed_logs:
-            if "Диапазон дат:" in log_line:
-                date_range = log_line.split("Диапазон дат:")[1].strip()
-                break
-        
-        # Формируем HTML-таблицу с результатами для сохранения в сессии
+        # Если результаты получены
         if ads_results and len(ads_results) > 0:
-            detailed_logs.append(f"Найдено {len(ads_results)} объявлений для проверки")
+            # Получаем набор уникальных пар (required_conversions, порог расхода)
+            thresholds_pairs = []
+            if setup:
+                thresholds = setup.get_thresholds_as_list()
+                thresholds_pairs = [(t['conversions'], t['spend']) for t in thresholds]
             
-            # Верхняя часть таблицы
-            html_details = """
-            <div class="card mb-4">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Результаты последней проверки</h5>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-striped table-sm">
-                            <thead class="thead-dark">
-                                <tr>
-                                    <th>ID объявления</th>
-                                    <th>Название</th>
-                                    <th>Статус</th>
-                                    <th>Расход ($)</th>
-                                    <th>Конверсии</th>
-                                    <th>Требуется</th>
-                                    <th>Результат</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-            """
+            # Формируем контекст данных для страницы проверки
+            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
             
-            # Строки таблицы с данными по каждому объявлению
-            for ad in ads_results:
-                # Определяем класс стиля для результата
-                result_class = ""
-                if ad.get('result') == "ПРОШЛО":
-                    result_class = "text-success"
-                elif ad.get('result') == "НЕ ПРОШЛО":
-                    result_class = "text-danger"
-                else:
-                    result_class = "text-secondary"
-                    
-                html_details += f"""
-                <tr>
-                    <td>{ad.get('id', 'Н/Д')}</td>
-                    <td>{ad.get('name', 'Н/Д')[:20]}</td>
-                    <td>{ad.get('status', 'Н/Д')}</td>
-                    <td>${ad.get('spend', 0):.2f}</td>
-                    <td>{ad.get('conversions', 0)}</td>
-                    <td>{ad.get('required_conversions', 0)}</td>
-                    <td><span class="{result_class}"><strong>{ad.get('result', 'Н/Д')}</strong></span></td>
-                </tr>
-                """
+            # Получаем диапазон дат из первого объявления или используем текущую дату
+            since_date, until_date = calculate_date_range_for_period(check_period)
+            date_range = f"{since_date} - {until_date}"
             
-            # Нижняя часть таблицы и итоги
+            # Статистика проверки
             successful_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and ad.get('disabled_success', False))
             failed_disabled = sum(1 for ad in ads_results if ad.get('disabled', False) and not ad.get('disabled_success', False))
             skipped_ads = sum(1 for ad in ads_results if ad.get('status') != 'ACTIVE')
             
-            html_details += """
-                            </tbody>
-                        </table>
-                    </div>
+            # Добавляем информацию о REF префиксах
+            ref_prefixes = setup.ref_prefixes.split(',') if hasattr(setup, 'ref_prefixes') and setup.ref_prefixes else []
+            ref_prefixes = [prefix.strip() for prefix in ref_prefixes if prefix.strip()]
+            
+            for ad in ads_results:
+                # Добавляем порог расхода для каждого объявления
+                for conv, spend in thresholds_pairs:
+                    if conv == ad.get('required_conversions'):
+                        ad['threshold_spend'] = spend
+                        break
+                else:
+                    ad['threshold_spend'] = 0
                     
-                    <div class="row mt-3">
-            """
+                # Добавляем REF префикс (для отображения)
+                ad['ref_prefix'] = ', '.join(ref_prefixes) if ref_prefixes else '-'
             
-            # Карточки с итогами
-            html_details += f"""
-                        <div class="col-md-3">
-                            <div class="card bg-light">
-                                <div class="card-body p-2 text-center">
-                                    <h6 class="card-title">Всего объявлений</h6>
-                                    <p class="card-text lead">{len(ads_results)}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card bg-success text-white">
-                                <div class="card-body p-2 text-center">
-                                    <h6 class="card-title">Отключено успешно</h6>
-                                    <p class="card-text lead">{successful_disabled}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card bg-danger text-white">
-                                <div class="card-body p-2 text-center">
-                                    <h6 class="card-title">Ошибки отключения</h6>
-                                    <p class="card-text lead">{failed_disabled}</p>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="col-md-3">
-                            <div class="card bg-info text-white">
-                                <div class="card-body p-2 text-center">
-                                    <h6 class="card-title">Пропущено</h6>
-                                    <p class="card-text lead">{skipped_ads}</p>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <div class="mt-3">
-                        <p><strong>Период проверки:</strong> {check_period or 'today'}</p>
-                        <p><strong>Диапазон дат:</strong> {date_range or 'Не указан'}</p>
-                    </div>
-                </div>
-            </div>
-            """
-            
-            # Добавляем детальный лог выполнения
-            html_details += """
-            <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">Подробный лог проверки</h5>
-                </div>
-                <div class="card-body">
-                    <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
-            """
-            
-            for log_entry in detailed_logs:
-                html_details += f"<div>{log_entry}</div>"
-                
-            html_details += """
-                    </div>
-                </div>
-            </div>
-            """
-            
-            # Сохраняем HTML с результатами в сессии
-            session['check_details_html'] = html_details
-            session['check_campaign_id'] = campaign_setup.campaign_id
-            
-            # Отображаем успешное сообщение с инструкцией
-            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно. Нажмите на строку кампании, чтобы увидеть подробные результаты.', 'success')
+            # Рендерим шаблон отчета о проверке
+            return render_template('campaigns/check_report.html',
+                campaign_id=campaign_setup.campaign_id,
+                campaign_name=campaign_setup.campaign_name,
+                period=check_period or 'today',
+                date_range=date_range,
+                timestamp=timestamp,
+                total_ads=len(ads_results),
+                successful_disabled=successful_disabled,
+                failed_disabled=failed_disabled,
+                skipped_ads=skipped_ads,
+                ads_results=ads_results,
+                thresholds=thresholds if setup else []
+            )
         else:
-            # Проверяем, есть ли в логах сообщение об отсутствии объявлений
-            no_ads_found = any("не найдено объявлений" in log.lower() for log in detailed_logs)
-            
-            title = "Объявления не найдены" if no_ads_found else "Проверка завершена"
-            message = "В этой кампании не удалось найти объявления для проверки." if no_ads_found else "Проверка кампании выполнена, но список результатов пуст."
-            card_class = "bg-warning" if no_ads_found else "bg-info"
-            
-            # Создаем HTML с детальным логом, но без таблицы результатов
-            html_details = f"""
-            <div class="card">
-                <div class="card-header {card_class}">
-                    <h5 class="mb-0">{title}</h5>
-                </div>
-                <div class="card-body">
-                    <p>{message}</p>
-                    <p><strong>Период проверки:</strong> {check_period or 'today'}</p>
-                    <p><strong>Диапазон дат:</strong> {date_range or 'Не указан'}</p>
-                </div>
-            </div>
-            
-            <div class="card mt-3">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">Подробный лог проверки</h5>
-                </div>
-                <div class="card-body">
-                    <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
-            """
-            
-            for log_entry in detailed_logs:
-                html_details += f"<div>{log_entry}</div>"
-                
-            html_details += """
-                    </div>
-                </div>
-            </div>
-            """
-            
-            # Сохраняем HTML с логом в сессии
-            session['check_details_html'] = html_details
-            session['check_campaign_id'] = campaign_setup.campaign_id
-            
-            if no_ads_found:
-                flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена успешно, но объявления не найдены.', 'warning')
-            else:
-                flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена, но список результатов пуст.', 'info')
+            # Если объявления не найдены
+            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}" выполнена, но объявления не найдены.', 'warning')
+            return redirect(url_for('main.campaigns'))
     except Exception as e:
         logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
         import traceback
         error_trace = traceback.format_exc()
         logger.error(error_trace)
         
-        # Добавляем информацию об ошибке в подробный лог
-        detailed_logs.append(f"ОШИБКА: {str(e)}")
-        detailed_logs.append("Трассировка ошибки:")
-        for line in error_trace.split('\n'):
-            if line.strip():
-                detailed_logs.append(line)
-        
-        # Создаем HTML с информацией об ошибке
-        html_details = """
-        <div class="card">
-            <div class="card-header bg-danger text-white">
-                <h5 class="mb-0">Ошибка при проверке кампании</h5>
-            </div>
-            <div class="card-body">
-                <p>При проверке кампании произошла ошибка:</p>
-                <div class="alert alert-danger">%s</div>
-            </div>
-        </div>
-        
-        <div class="card mt-3">
-            <div class="card-header bg-secondary text-white">
-                <h5 class="mb-0">Подробный лог проверки</h5>
-            </div>
-            <div class="card-body">
-                <div class="log-container" style="max-height: 400px; overflow-y: auto; background-color: #f5f5f5; padding: 10px; border-radius: 5px; font-family: monospace;">
-        """ % str(e)
-        
-        for log_entry in detailed_logs:
-            html_details += f"<div>{log_entry}</div>"
-            
-        html_details += """
-                </div>
-            </div>
-        </div>
-        """
-        
-        # Сохраняем HTML с информацией об ошибке в сессии
-        session['check_details_html'] = html_details
-        session['check_campaign_id'] = campaign_setup.campaign_id
-        
         flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
+        return redirect(url_for('main.campaigns'))
     
     return redirect(url_for('main.campaigns'))
 
@@ -1184,3 +965,63 @@ def conversions_by_prefix(ref_prefix):
         logger.error(f"Ошибка при отображении статистики по префиксу {ref_prefix}: {str(e)}")
         flash(f'Произошла ошибка при загрузке статистики: {str(e)}', 'danger')
         return redirect(url_for('main.conversions_list', ref_prefix=ref_prefix))
+
+@bp.route('/campaigns/check/<string:campaign_id>', methods=['GET'])
+@login_required
+def check_campaign(campaign_id):
+    check_period = request.args.get('check_period', 'today')
+    
+    try:
+        # Получаем настройку для кампании
+        campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+        if not campaign_setup:
+            return render_template('campaigns/check_report.html', 
+                                  error=f"Настройка для кампании {campaign_id} не найдена", 
+                                  results={})
+        
+        # Получаем результаты проверки кампании
+        results = check_campaign_thresholds(campaign_id, campaign_setup.setup_id, check_period=check_period)
+        
+        if 'error' in results:
+            return render_template('campaigns/check_report.html', error=results['error'], results={})
+        
+        # Форматируем результаты для шаблона
+        formatted_results = {
+            'campaign_id': results.get('campaign_id'),
+            'campaign_name': campaign_setup.campaign_name,
+            'check_period': results.get('check_period'),
+            'date_range': {
+                'start': results.get('date_from'),
+                'end': results.get('date_to')
+            },
+            'threshold': {
+                'spend': results.get('setup_spend'),
+                'conversions': results.get('setup_conversions')
+            },
+            'stats': {
+                'total_ads_checked': results.get('ads_checked'),
+                'ads_disabled': results.get('ads_disabled')
+            },
+            'ad_results': []
+        }
+        
+        # Преобразуем результаты для каждого объявления
+        for ad in results.get('ads_results', []):
+            formatted_results['ad_results'].append({
+                'ad_id': ad.get('ad_id'),
+                'name': ad.get('ad_name'),
+                'ref': ad.get('ref'),
+                'spend': ad.get('spend'),
+                'conversions': ad.get('conversions'),
+                'status': ad.get('status'),
+                'disabled': not ad.get('passed', True),
+                'reason': ad.get('reason')
+            })
+        
+        return render_template('campaigns/check_report.html', results=formatted_results)
+        
+    except Exception as e:
+        logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
+        return render_template('campaigns/check_report.html', 
+                              error=f"Произошла ошибка при проверке кампании: {str(e)}",
+                              results={})
