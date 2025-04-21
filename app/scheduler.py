@@ -133,7 +133,15 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
         results['date_to'] = date_range['until']
         
         # Создаем экземпляр API Facebook
-        fb_api = FacebookAPI()
+        # Получаем активный токен из базы данных
+        token = FacebookToken.query.filter_by(status='valid').first()
+        if not token:
+            error_msg = "Не найден активный токен Facebook API"
+            logger.error(error_msg)
+            results['error'] = error_msg
+            return results
+            
+        fb_api = FacebookAPI(token.access_token)
         
         # Получаем объявления в кампании
         ads_in_campaign = fb_api.get_ads_in_campaign(campaign_id)
