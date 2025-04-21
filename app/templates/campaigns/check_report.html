@@ -23,9 +23,9 @@
 <div class="container mt-4">
     <h1 class="mb-4">Отчет о проверке кампании</h1>
     
-    {% if error %}
+    {% if results.error %}
     <div class="alert alert-danger">
-        {{ error }}
+        {{ results.error }}
     </div>
     {% endif %}
     
@@ -40,13 +40,13 @@
                     <div class="row">
                         <div class="col-md-6">
                             <p><strong>ID кампании:</strong> {{ results.campaign_id }}</p>
-                            <p><strong>Название кампании:</strong> {{ results.campaign_name }}</p>
+                            <p><strong>ID настройки:</strong> {{ results.setup_id }}</p>
                             <p><strong>Период проверки:</strong> {{ results.check_period }}</p>
                         </div>
                         <div class="col-md-6">
-                            <p><strong>Даты:</strong> {{ results.date_range.start }} - {{ results.date_range.end }}</p>
-                            <p><strong>Порог расходов:</strong> {{ results.threshold.spend }} руб.</p>
-                            <p><strong>Порог конверсий:</strong> {{ results.threshold.conversions }}</p>
+                            <p><strong>Даты:</strong> {{ results.date_from }} - {{ results.date_to }}</p>
+                            <p><strong>Порог расходов:</strong> ${{ results.setup_spend }}</p>
+                            <p><strong>Порог конверсий:</strong> {{ results.setup_conversions }}</p>
                         </div>
                     </div>
                 </div>
@@ -61,8 +61,8 @@
                     <h5 class="mb-0">Результаты проверки</h5>
                 </div>
                 <div class="card-body">
-                    <p><strong>Проверено объявлений:</strong> {{ results.stats.total_ads_checked }}</p>
-                    <p><strong>Отключено объявлений:</strong> {{ results.stats.ads_disabled }}</p>
+                    <p><strong>Проверено объявлений:</strong> {{ results.ads_checked }}</p>
+                    <p><strong>Отключено объявлений:</strong> {{ results.ads_disabled }}</p>
                     
                     <div class="table-responsive mt-3">
                         <table class="table table-bordered table-hover">
@@ -71,26 +71,27 @@
                                     <th>ID объявления</th>
                                     <th>Название</th>
                                     <th>Ref</th>
-                                    <th>Расход (руб.)</th>
+                                    <th>Расход ($)</th>
                                     <th>Конверсии</th>
                                     <th>Статус</th>
                                     <th>Результат</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for ad in results.ad_results %}
-                                <tr class="{{ 'table-danger' if ad.disabled else 'table-success' }}">
+                                {% for ad in results.ads_results %}
+                                <tr class="{{ 'failed' if not ad.passed else 'passed' }}">
                                     <td>{{ ad.ad_id }}</td>
-                                    <td>{{ ad.name }}</td>
+                                    <td>{{ ad.ad_name }}</td>
                                     <td>{{ ad.ref if ad.ref else 'Н/Д' }}</td>
-                                    <td>{{ ad.spend }}</td>
+                                    <td>${{ "%.2f"|format(ad.spend) }}</td>
                                     <td>{{ ad.conversions }}</td>
-                                    <td>{{ 'Активно' if ad.status == 'ACTIVE' else 'Отключено' }}</td>
+                                    <td>{{ ad.status }}</td>
                                     <td>
-                                        {% if ad.disabled %}
-                                        <span class="badge bg-danger">Не прошло проверку</span>
-                                        {% else %}
+                                        {% if ad.passed %}
                                         <span class="badge bg-success">Прошло проверку</span>
+                                        {% else %}
+                                        <span class="badge bg-danger">Не прошло проверку</span><br>
+                                        <small>{{ ad.reason }}</small>
                                         {% endif %}
                                     </td>
                                 </tr>

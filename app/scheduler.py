@@ -74,7 +74,7 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
             - error: Информация об ошибке (если есть)
     """
     # Импортируем модели и API
-    from app.models.setup import Setup
+    from app.models.setup import Setup, ThresholdEntry
     from app.services.facebook_api import FacebookAPI
     from app.models.conversion import Conversion
     from sqlalchemy import func
@@ -96,12 +96,30 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
             'ads_results': []
         }
     
+    # Получаем пороговые значения из первого порога
+    threshold_values = setup.get_thresholds_as_list()
+    if not threshold_values:
+        error_msg = f"Для настройки с ID {setup_id} не заданы пороговые значения"
+        logger.error(error_msg)
+        return {
+            'campaign_id': campaign_id,
+            'error': error_msg,
+            'ads_checked': 0,
+            'ads_disabled': 0,
+            'ads_results': []
+        }
+    
+    # Берем первый порог из списка
+    first_threshold = threshold_values[0]
+    threshold_spend = first_threshold['spend']
+    threshold_conversions = first_threshold['conversions']
+    
     # Инициализируем результаты проверки
     results = {
         'campaign_id': campaign_id,
         'setup_id': setup.id,
-        'setup_spend': setup.spend,
-        'setup_conversions': setup.conversions,
+        'setup_spend': threshold_spend,
+        'setup_conversions': threshold_conversions,
         'check_period': check_period,
         'ads_checked': 0,
         'ads_disabled': 0,
@@ -173,9 +191,9 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
             disable_reason = None
             
             # Если расход выше порогового значения И количество конверсий меньше порогового значения
-            if spend >= setup.spend and conversions_count < setup.conversions:
+            if spend >= threshold_spend and conversions_count < threshold_conversions:
                 threshold_exceeded = True
-                disable_reason = f"Расход ${spend:.2f} >= ${setup.spend:.2f} и конверсий {conversions_count} < {setup.conversions}"
+                disable_reason = f"Расход ${spend:.2f} >= ${threshold_spend:.2f} и конверсий {conversions_count} < {threshold_conversions}"
                 
                 # Отключаем объявление если порог превышен
                 try:
