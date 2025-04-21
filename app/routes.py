@@ -1,4 +1,4 @@
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, session, current_app as app
 from flask_login import current_user, login_required
 from app.extensions import db
 from app.models.user import User
@@ -10,18 +10,30 @@ from app.services.token_checker import TokenChecker
 from app.models.conversion import Conversion
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta, date as dt_date
 import random
 import string
 from pathlib import Path
 import os
 import glob
 from markupsafe import Markup
+import threading
+import uuid
+import time
+from functools import partial
+from threading import Thread
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('main', __name__)
+
+# Словарь для хранения статусов проверки кампаний
+# Ключ: {user_id}_{campaign_id}, значение: словарь со статусом проверки
+campaign_check_status = {}
+
+# Словарь для хранения статусов задач проверки
+app.check_tasks = {}
 
 @bp.route('/')
 @bp.route('/index')
@@ -486,82 +498,96 @@ def check_campaign_setup(id):
     
     logger.info(f"Запуск принудительной проверки для кампании {campaign_setup.campaign_id}")
     
-    try:
-        # Импортируем функцию для проверки кампаний
-        from app.scheduler import check_campaign_thresholds
-        
-        # Получаем период проверки из связанного сетапа
-        setup = Setup.query.get(campaign_setup.setup_id)
-        check_period = setup.check_period if setup else None
-        
-        # Выполняем проверку и получаем результаты
-        results = check_campaign_thresholds(campaign_setup.campaign_id, campaign_setup.setup_id, check_period=check_period)
-        
-        # Обновляем время последней проверки
-        campaign_setup.last_checked = datetime.utcnow()
-        db.session.commit()
-        
-        # Если результаты получены и нет ошибок
-        if results and 'error' not in results and len(results.get('ads_results', [])) > 0:
-            # Получаем набор уникальных пар (required_conversions, порог расхода)
-            thresholds_pairs = []
-            if setup:
-                thresholds = setup.get_thresholds_as_list()
-                thresholds_pairs = [(t['conversions'], t['spend']) for t in thresholds]
-            
-            # Формируем контекст данных для страницы проверки
-            timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
-            
-            # Форматируем результаты для шаблона
-            formatted_results = {
-                'campaign_id': results.get('campaign_id'),
-                'campaign_name': campaign_setup.campaign_name,
-                'check_period': results.get('check_period'),
-                'date_range': {
-                    'start': results.get('date_from'),
-                    'end': results.get('date_to')
-                },
-                'threshold': {
-                    'spend': results.get('setup_spend'),
-                    'conversions': results.get('setup_conversions')
-                },
-                'stats': {
-                    'total_ads_checked': results.get('ads_checked'),
-                    'ads_disabled': results.get('ads_disabled')
-                },
-                'ad_results': []
-            }
-            
-            # Преобразуем результаты для каждого объявления
-            for ad in results.get('ads_results', []):
-                formatted_results['ad_results'].append({
-                    'ad_id': ad.get('ad_id'),
-                    'name': ad.get('ad_name'),
-                    'ref': ad.get('ref'),
-                    'spend': ad.get('spend'),
-                    'conversions': ad.get('conversions'),
-                    'status': ad.get('status'),
-                    'disabled': not ad.get('passed', True),
-                    'reason': ad.get('reason')
-                })
-            
-            # Рендерим шаблон отчета о проверке
-            return render_template('campaigns/check_report.html', results=formatted_results)
-        else:
-            # Если объявления не найдены или есть ошибка
-            error_message = results.get('error', 'Объявления не найдены')
-            flash(f'Проверка кампании "{campaign_setup.campaign_name or campaign_setup.campaign_id}": {error_message}', 'warning')
-            return redirect(url_for('main.campaigns'))
-    except Exception as e:
-        logger.error(f"Ошибка при проверке кампании {campaign_setup.campaign_id}: {str(e)}")
-        import traceback
-        error_trace = traceback.format_exc()
-        logger.error(error_trace)
-        
-        flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
-        return redirect(url_for('main.campaigns'))
+    # Получаем период проверки из связанного сетапа
+    setup = Setup.query.get(campaign_setup.setup_id)
+    check_period = setup.check_period if setup else None
     
-    return redirect(url_for('main.campaigns'))
+    # Перенаправляем на страницу с асинхронной проверкой
+    return redirect(url_for('main.async_check_campaign', 
+                           campaign_id=campaign_setup.campaign_id, 
+                           check_period=check_period))
+
+@bp.route('/campaigns/check/<string:campaign_id>', methods=['GET', 'POST'])
+@login_required
+def check_campaign(campaign_id):
+    # Получить настройки кампании
+    setup = Setup.query.filter_by(campaign_id=campaign_id).first()
+    check_period = request.args.get('check_period', 'today')
+    
+    # Если это AJAX запрос, начинаем проверку в фоновом режиме
+    if request.is_json and request.method == 'POST':
+        data = request.get_json()
+        check_period = data.get('check_period', 'today')
+        
+        # Создать уникальный ID для проверки
+        check_id = str(uuid.uuid4())
+        
+        # Установить начальный статус
+        app.check_tasks[check_id] = {
+            'status': 'started',
+            'campaign_id': campaign_id,
+            'check_period': check_period,
+            'results': [],
+            'error': None
+        }
+        
+        # Запустить проверку в отдельном потоке
+        thread = Thread(target=perform_campaign_check, args=(check_id, campaign_id, check_period, setup))
+        thread.daemon = True
+        thread.start()
+        
+        # Вернуть ID проверки для последующих запросов статуса
+        return jsonify({
+            'status': 'started',
+            'check_id': check_id
+        })
+    
+    # Если это обычный GET запрос, вернуть шаблон
+    return render_template('campaigns/check_report.html', 
+                           campaign_id=campaign_id, 
+                           setup=setup,
+                           check_period=check_period)
+
+def perform_campaign_check(check_id, campaign_id, check_period, setup):
+    """Выполняет проверку кампании в фоновом режиме"""
+    try:
+        # Получить результаты проверки
+        results = scheduler.check_campaign_thresholds(campaign_id, setup, check_period)
+        
+        # Обновить статус задачи
+        app.check_tasks[check_id] = {
+            'status': 'completed',
+            'campaign_id': campaign_id,
+            'check_period': check_period,
+            'results': results,
+            'error': None
+        }
+    except Exception as e:
+        app.logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
+        # Обновить статус задачи с ошибкой
+        app.check_tasks[check_id] = {
+            'status': 'error',
+            'campaign_id': campaign_id,
+            'check_period': check_period,
+            'results': [],
+            'error': str(e)
+        }
+
+@bp.route('/campaigns/check-status/<string:check_id>')
+@login_required
+def check_status(check_id):
+    """Возвращает статус проверки кампании"""
+    # Получить статус задачи
+    task_status = app.check_tasks.get(check_id)
+    
+    if not task_status:
+        return jsonify({
+            'status': 'error',
+            'error': 'Задача проверки не найдена'
+        }), 404
+    
+    # Вернуть актуальный статус
+    return jsonify(task_status)
 
 @bp.route('/api/conversion/add', methods=['GET', 'POST'])
 def add_conversion():
@@ -963,62 +989,203 @@ def conversions_by_prefix(ref_prefix):
         flash(f'Произошла ошибка при загрузке статистики: {str(e)}', 'danger')
         return redirect(url_for('main.conversions_list', ref_prefix=ref_prefix))
 
-@bp.route('/campaigns/check/<string:campaign_id>', methods=['GET'])
+@bp.route('/api/campaigns/check/status/<string:check_id>', methods=['GET'])
 @login_required
-def check_campaign(campaign_id):
-    check_period = request.args.get('check_period', 'today')
+def check_campaign_status(check_id):
+    # Получаем идентификатор кампании из идентификатора проверки
+    parts = check_id.split('_')
+    if len(parts) > 0:
+        campaign_id = parts[0]
+        
+        # Проверяем статус в campaign_check_status
+        status_key = f"{current_user.id}_{campaign_id}"
+        if status_key in campaign_check_status:
+            return jsonify(campaign_check_status[status_key])
     
+    # Если статус не найден, возвращаем 'not_found'
+    return jsonify({
+        'status': 'not_found',
+        'message': 'Статус проверки не найден'
+    })
+
+@bp.route('/api/campaigns/check/start/<string:campaign_id>', methods=['POST'])
+@login_required
+def api_start_check_campaign(campaign_id):
+    """API для запуска проверки кампании в фоне"""
     try:
-        # Получаем настройку для кампании
-        campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+        # Проверяем кампанию и настройки
+        from app.models.setup import CampaignSetup
+        campaign_setup = CampaignSetup.query.filter_by(
+            campaign_id=campaign_id, 
+            user_id=current_user.id
+        ).first()
+        
         if not campaign_setup:
-            return render_template('campaigns/check_report.html', 
-                                  error=f"Настройка для кампании {campaign_id} не найдена", 
-                                  results={})
+            return jsonify({
+                'status': 'error',
+                'message': f'Настройки для кампании {campaign_id} не найдены'
+            }), 404
         
-        # Получаем результаты проверки кампании
-        results = check_campaign_thresholds(campaign_id, campaign_setup.setup_id, check_period=check_period)
+        # Период проверки, используем период из настроек кампании или 'today' по умолчанию
+        check_period = campaign_setup.setup.check_period if hasattr(campaign_setup.setup, 'check_period') else 'today'
         
-        if 'error' in results:
-            return render_template('campaigns/check_report.html', error=results['error'], results={})
+        # Создаем уникальный ключ для статуса
+        status_key = f"{current_user.id}_{campaign_id}"
         
-        # Форматируем результаты для шаблона
-        formatted_results = {
-            'campaign_id': results.get('campaign_id'),
-            'campaign_name': campaign_setup.campaign_name,
-            'check_period': results.get('check_period'),
-            'date_range': {
-                'start': results.get('date_from'),
-                'end': results.get('date_to')
-            },
-            'threshold': {
-                'spend': results.get('setup_spend'),
-                'conversions': results.get('setup_conversions')
-            },
-            'stats': {
-                'total_ads_checked': results.get('ads_checked'),
-                'ads_disabled': results.get('ads_disabled')
-            },
-            'ad_results': []
+        # Инициализируем статус
+        campaign_check_status[status_key] = {
+            'status': 'starting',
+            'progress': 0,
+            'message': 'Запуск проверки...',
+            'logs': [],
+            'results': None
         }
         
-        # Преобразуем результаты для каждого объявления
-        for ad in results.get('ads_results', []):
-            formatted_results['ad_results'].append({
-                'ad_id': ad.get('ad_id'),
-                'name': ad.get('ad_name'),
-                'ref': ad.get('ref'),
-                'spend': ad.get('spend'),
-                'conversions': ad.get('conversions'),
-                'status': ad.get('status'),
-                'disabled': not ad.get('passed', True),
-                'reason': ad.get('reason')
-            })
+        # Запускаем проверку в отдельном потоке
+        thread = threading.Thread(
+            target=run_campaign_check_in_background,
+            args=(campaign_id, campaign_setup.setup_id, check_period, status_key)
+        )
+        thread.daemon = True
+        thread.start()
         
-        return render_template('campaigns/check_report.html', results=formatted_results)
+        return jsonify({
+            'status': 'started',
+            'message': 'Проверка запущена'
+        })
         
     except Exception as e:
-        logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
-        return render_template('campaigns/check_report.html', 
-                              error=f"Произошла ошибка при проверке кампании: {str(e)}",
-                              results={})
+        app.logger.error(f"Ошибка при запуске проверки кампании {campaign_id}: {str(e)}")
+        return jsonify({
+            'status': 'error',
+            'message': f'Ошибка при запуске проверки: {str(e)}'
+        }), 500
+
+def run_campaign_check_in_background(campaign_id, setup_id, check_period, status_key):
+    """Запускает проверку кампании в фоновом режиме и обновляет статус"""
+    from app.scheduler import check_campaign_thresholds
+    
+    # Функция обратного вызова для обновления статуса
+    def update_progress(stage, current, total, message):
+        progress = int((current / total) * 100) if total > 0 else 0
+        
+        # Добавляем сообщение в лог
+        if status_key in campaign_check_status:
+            if 'logs' not in campaign_check_status[status_key]:
+                campaign_check_status[status_key]['logs'] = []
+            
+            campaign_check_status[status_key]['logs'].append({
+                'time': time.strftime('%H:%M:%S'),
+                'message': message
+            })
+            
+            # Не храним больше 50 сообщений
+            if len(campaign_check_status[status_key]['logs']) > 50:
+                campaign_check_status[status_key]['logs'] = campaign_check_status[status_key]['logs'][-50:]
+        
+        # Обновляем статус
+        if stage == 'error':
+            campaign_check_status[status_key] = {
+                'status': 'error',
+                'progress': 100,
+                'message': message,
+                'logs': campaign_check_status[status_key].get('logs', []),
+                'results': None
+            }
+        elif stage == 'complete':
+            campaign_check_status[status_key]['status'] = 'complete'
+            campaign_check_status[status_key]['progress'] = 100
+            campaign_check_status[status_key]['message'] = 'Проверка завершена'
+        else:
+            campaign_check_status[status_key]['status'] = 'running'
+            campaign_check_status[status_key]['progress'] = progress
+            campaign_check_status[status_key]['message'] = message
+    
+    try:
+        # Обновляем статус
+        update_progress('setup', 0, 1, 'Начало проверки кампании...')
+        
+        # Запускаем проверку с обратным вызовом для обновления прогресса
+        results = check_campaign_thresholds(
+            campaign_id=campaign_id,
+            setup_id=setup_id,
+            check_period=check_period,
+            progress_callback=update_progress
+        )
+        
+        # Обновляем финальный статус
+        if 'error' in results:
+            update_progress('error', 0, 1, f"Ошибка: {results['error']}")
+        else:
+            # Сохраняем результаты
+            campaign_check_status[status_key]['results'] = results
+            update_progress('complete', 1, 1, 'Проверка успешно завершена')
+            
+    except Exception as e:
+        import traceback
+        error_trace = traceback.format_exc()
+        app.logger.error(f"Ошибка при проверке кампании {campaign_id}: {str(e)}")
+        app.logger.error(error_trace)
+        update_progress('error', 0, 1, f"Ошибка: {str(e)}")
+
+@bp.route('/campaigns/async-check/<string:campaign_id>')
+@login_required
+def async_check_campaign(campaign_id):
+    """Страница асинхронной проверки кампании"""
+    campaign = get_ad_campaign(campaign_id)
+    if not campaign:
+        flash('Кампания не найдена', 'danger')
+        return redirect(url_for('bp.campaign_list'))
+    
+    # Получаем настройки кампании
+    campaign_setup = Setup.query.filter_by(campaign_id=campaign_id).first()
+    check_period = request.args.get('check_period', 'today')
+    
+    if campaign_setup and campaign_setup.check_period and not check_period:
+        check_period = campaign_setup.check_period
+    
+    return render_template(
+        'campaigns/async_check.html',
+        campaign_id=campaign_id,
+        campaign_name=campaign.get('name', 'Неизвестная кампания'),
+        campaign_setup=campaign_setup,
+        check_period=check_period
+    )
+
+@bp.route('/api/campaigns/check/<string:campaign_id>', methods=['POST'])
+@login_required
+def api_check_campaign(campaign_id):
+    """API для проверки кампании с возвратом результатов в JSON"""
+    try:
+        check_period = request.json.get('check_period', 'today')
+        results = check_campaign_thresholds(campaign_id, check_period=check_period)
+        
+        if not results:
+            return jsonify({
+                'success': False,
+                'error': 'Нет результатов проверки'
+            }), 404
+            
+        return jsonify({
+            'success': True,
+            'results': results,
+            'campaign_id': campaign_id
+        })
+    except Exception as e:
+        app.logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+@bp.route('/api/campaigns/status/<string:campaign_id>', methods=['GET'])
+@login_required
+def api_campaign_status(campaign_id):
+    """API для получения статуса проверки кампании."""
+    # Заглушка для будущей реализации хранения статуса проверки
+    # В будущем здесь можно хранить статус в Redis или другом хранилище
+    return jsonify({
+        'status': 'completed',
+        'progress': 100,
+        'logs': []
+    })

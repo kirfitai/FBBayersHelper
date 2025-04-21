@@ -1,0 +1,227 @@
+{% extends "base.html" %}
+
+{% block content %}
+
+<div class="container">
+    <h2>Асинхронная проверка кампании: {{ campaign_name }}</h2>
+    
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Информация о кампании</h5>
+        </div>
+        <div class="card-body">
+            <p><strong>ID кампании:</strong> {{ campaign_id }}</p>
+            <p><strong>Период проверки:</strong> <span id="check-period">{{ check_period }}</span></p>
+            <p><strong>Настройки пороговых значений:</strong> 
+                {% if campaign_setup %}
+                    <ul>
+                        <li>CPC: {{ campaign_setup.cpc }}</li>
+                        <li>CPM: {{ campaign_setup.cpm }}</li>
+                        <li>Затраты: {{ campaign_setup.costs }}</li>
+                        <li>Минимальные конверсии: {{ campaign_setup.conversions }}</li>
+                        <li>Период проверки: {{ campaign_setup.check_period }}</li>
+                    </ul>
+                {% else %}
+                    <span class="text-danger">Настройки не найдены</span>
+                {% endif %}
+            </p>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Статус проверки</h5>
+        </div>
+        <div class="card-body">
+            <div class="progress mb-3">
+                <div id="progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+            </div>
+            <div id="status-message" class="alert alert-info">
+                Подготовка к проверке кампании...
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Результаты проверки</h5>
+        </div>
+        <div class="card-body">
+            <div id="loading-container" class="text-center">
+                <div class="spinner-border text-primary" role="status">
+                    <span class="visually-hidden">Загрузка...</span>
+                </div>
+                <p class="mt-2">Загрузка результатов...</p>
+            </div>
+            
+            <div id="error-container" class="alert alert-danger" style="display: none;">
+                <h5>Произошла ошибка при проверке кампании</h5>
+                <p id="error-message"></p>
+            </div>
+            
+            <div id="result-container" style="display: none;">
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>ID объявления</th>
+                                <th>Имя объявления</th>
+                                <th>Статус</th>
+                                <th>CPC</th>
+                                <th>CPM</th>
+                                <th>Затраты</th>
+                                <th>Конверсии</th>
+                                <th>Статус проверки</th>
+                                <th>Причина</th>
+                            </tr>
+                        </thead>
+                        <tbody id="results-table-body">
+                            <!-- Результаты будут добавлены здесь с помощью JavaScript -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            <div id="no-results-container" class="alert alert-warning" style="display: none;">
+                <p>Нет результатов для отображения.</p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="mb-4">
+        <a href="{{ url_for('bp.campaign_list') }}" class="btn btn-secondary">Вернуться к списку кампаний</a>
+        <button id="refresh-btn" class="btn btn-primary">Обновить проверку</button>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener('DOMContentLoaded', function() {
+        const campaignId = "{{ campaign_id }}";
+        const checkPeriod = "{{ check_period }}";
+        
+        // Элементы UI
+        const progressBar = document.getElementById('progress-bar');
+        const statusMessage = document.getElementById('status-message');
+        const loadingContainer = document.getElementById('loading-container');
+        const resultContainer = document.getElementById('result-container');
+        const errorContainer = document.getElementById('error-container');
+        const errorMessage = document.getElementById('error-message');
+        const noResultsContainer = document.getElementById('no-results-container');
+        const resultsTableBody = document.getElementById('results-table-body');
+        const refreshBtn = document.getElementById('refresh-btn');
+        
+        // Функция для запуска проверки кампании
+        function startCampaignCheck() {
+            // Сбросить UI
+            progressBar.style.width = '10%';
+            statusMessage.textContent = 'Начинаем проверку кампании...';
+            loadingContainer.style.display = 'block';
+            resultContainer.style.display = 'none';
+            errorContainer.style.display = 'none';
+            noResultsContainer.style.display = 'none';
+            
+            // Отправить запрос на проверку
+            fetch(`/api/campaigns/check/${campaignId}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token() }}'
+                },
+                body: JSON.stringify({
+                    check_period: checkPeriod
+                })
+            })
+            .then(response => {
+                progressBar.style.width = '100%';
+                
+                if (!response.ok) {
+                    throw new Error(`Ошибка HTTP: ${response.status}`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                statusMessage.textContent = 'Проверка завершена';
+                loadingContainer.style.display = 'none';
+                
+                if (data.success && data.results) {
+                    displayResults(data.results);
+                } else {
+                    throw new Error(data.error || 'Нет результатов для отображения');
+                }
+            })
+            .catch(error => {
+                console.error('Ошибка при проверке кампании:', error);
+                statusMessage.textContent = 'Произошла ошибка при проверке кампании';
+                progressBar.style.width = '100%';
+                loadingContainer.style.display = 'none';
+                errorContainer.style.display = 'block';
+                errorMessage.textContent = error.message || 'Неизвестная ошибка';
+            });
+        }
+        
+        // Функция отображения результатов
+        function displayResults(results) {
+            resultsTableBody.innerHTML = '';
+            
+            if (!results || results.length === 0) {
+                noResultsContainer.style.display = 'block';
+                return;
+            }
+            
+            results.forEach(result => {
+                const row = document.createElement('tr');
+                
+                // Определение класса строки в зависимости от результата проверки
+                if (result.check_result === 'disable') {
+                    row.classList.add('table-danger');
+                } else if (result.check_result === 'warning') {
+                    row.classList.add('table-warning');
+                } else {
+                    row.classList.add('table-success');
+                }
+                
+                row.innerHTML = `
+                    <td>${result.ad_id}</td>
+                    <td>${result.ad_name}</td>
+                    <td>${result.status}</td>
+                    <td>${result.cpc ? result.cpc.toFixed(2) : 'N/A'}</td>
+                    <td>${result.cpm ? result.cpm.toFixed(2) : 'N/A'}</td>
+                    <td>${result.spend ? result.spend.toFixed(2) : '0.00'}</td>
+                    <td>${result.conversions || '0'}</td>
+                    <td>${getCheckResultText(result.check_result)}</td>
+                    <td>${result.reason || '-'}</td>
+                `;
+                
+                resultsTableBody.appendChild(row);
+            });
+            
+            resultContainer.style.display = 'block';
+        }
+        
+        // Вспомогательная функция для получения текста статуса проверки
+        function getCheckResultText(result) {
+            switch(result) {
+                case 'disable':
+                    return 'Отключить';
+                case 'warning':
+                    return 'Предупреждение';
+                case 'ok':
+                    return 'OK';
+                default:
+                    return result || 'Неизвестно';
+            }
+        }
+        
+        // Обработчик нажатия кнопки обновления
+        refreshBtn.addEventListener('click', function() {
+            startCampaignCheck();
+        });
+        
+        // Запустить проверку при загрузке страницы
+        startCampaignCheck();
+    });
+</script>
+{% endblock %} 

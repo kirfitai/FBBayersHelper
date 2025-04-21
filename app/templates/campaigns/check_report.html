@@ -1,153 +1,215 @@
-{% extends 'base.html' %}
+{% extends "base.html" %}
 
-{% block title %}Отчет о проверке кампании{% endblock %}
+{% block title %}Проверка кампании{% endblock %}
 
 {% block styles %}
+{{ super() }}
 <style>
-    .passed {
-        background-color: rgba(40, 167, 69, 0.2);
+    .loader-container {
+        display: none;
+        text-align: center;
+        margin: 20px 0;
     }
-    .failed {
-        background-color: rgba(220, 53, 69, 0.2);
+    .loader {
+        border: 5px solid #f3f3f3;
+        border-top: 5px solid #3498db;
+        border-radius: 50%;
+        width: 50px;
+        height: 50px;
+        animation: spin 1s linear infinite;
+        margin: 0 auto;
     }
-    .ad-row:hover {
-        background-color: rgba(0, 123, 255, 0.1);
+    @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
     }
-    .period-select {
-        margin-bottom: 15px;
+    .error-message {
+        display: none;
+        color: #dc3545;
+        margin: 20px 0;
+        padding: 15px;
+        border: 1px solid #dc3545;
+        border-radius: 4px;
+        background-color: #f8d7da;
+    }
+    .results-container {
+        display: none;
+    }
+
+    .status-disabled {
+        background-color: #d4edda;
+    }
+
+    .status-active {
+        background-color: #fff3cd;
+    }
+
+    .status-warning {
+        background-color: #f8d7da;
     }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="container mt-4">
-    <h1 class="mb-4">Отчет о проверке кампании</h1>
+    <h1>Проверка кампании: {{ campaign.name }}</h1>
     
-    {% if results.error %}
-    <div class="alert alert-danger">
-        {{ results.error }}
-    </div>
-    {% endif %}
-    
-    {% if results %}
-    <div class="row">
-        <div class="col-md-12 mb-4">
-            <div class="card">
-                <div class="card-header bg-primary text-white">
-                    <h5 class="mb-0">Информация о кампании</h5>
-                </div>
-                <div class="card-body">
-                    <div class="row">
-                        <div class="col-md-6">
-                            <p><strong>ID кампании:</strong> {{ results.campaign_id }}</p>
-                            <p><strong>ID настройки:</strong> {{ results.setup_id }}</p>
-                            <p><strong>Период проверки:</strong> {{ results.check_period }}</p>
-                        </div>
-                        <div class="col-md-6">
-                            <p><strong>Даты:</strong> {{ results.date_from }} - {{ results.date_to }}</p>
-                            <p><strong>Порог расходов:</strong> ${{ results.setup_spend }}</p>
-                            <p><strong>Порог конверсий:</strong> {{ results.setup_conversions }}</p>
-                        </div>
+    <div class="card mb-4">
+        <div class="card-header">
+            <h5>Параметры проверки</h5>
+        </div>
+        <div class="card-body">
+            <form id="checkForm">
+                <div class="form-group row">
+                    <label for="checkPeriod" class="col-sm-3 col-form-label">Период для проверки:</label>
+                    <div class="col-sm-6">
+                        <select class="form-control" id="checkPeriod" name="check_period">
+                            <option value="today" {% if check_period == 'today' %}selected{% endif %}>Сегодня</option>
+                            <option value="last2days" {% if check_period == 'last2days' %}selected{% endif %}>Последние 2 дня</option>
+                            <option value="last3days" {% if check_period == 'last3days' %}selected{% endif %}>Последние 3 дня</option>
+                            <option value="last7days" {% if check_period == 'last7days' %}selected{% endif %}>Последние 7 дней</option>
+                            <option value="alltime" {% if check_period == 'alltime' %}selected{% endif %}>Все время</option>
+                        </select>
+                    </div>
+                    <div class="col-sm-3">
+                        <button type="submit" class="btn btn-primary" id="checkButton">
+                            <i class="fas fa-sync-alt"></i> Проверить
+                        </button>
                     </div>
                 </div>
-            </div>
+            </form>
         </div>
     </div>
     
-    <div class="row">
-        <div class="col-md-12 mb-4">
-            <div class="card">
-                <div class="card-header bg-info text-white">
-                    <h5 class="mb-0">Результаты проверки</h5>
-                </div>
-                <div class="card-body">
-                    <p><strong>Проверено объявлений:</strong> {{ results.ads_checked }}</p>
-                    <p><strong>Отключено объявлений:</strong> {{ results.ads_disabled }}</p>
-                    
-                    <div class="table-responsive mt-3">
-                        <table class="table table-bordered table-hover">
-                            <thead class="thead-dark">
-                                <tr>
-                                    <th>ID объявления</th>
-                                    <th>Название</th>
-                                    <th>Ref</th>
-                                    <th>Расход ($)</th>
-                                    <th>Конверсии</th>
-                                    <th>Статус</th>
-                                    <th>Результат</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for ad in results.ads_results %}
-                                <tr class="{{ 'failed' if not ad.passed else 'passed' }}">
-                                    <td>{{ ad.ad_id }}</td>
-                                    <td>{{ ad.ad_name }}</td>
-                                    <td>{{ ad.ref if ad.ref else 'Н/Д' }}</td>
-                                    <td>${{ "%.2f"|format(ad.spend) }}</td>
-                                    <td>{{ ad.conversions }}</td>
-                                    <td>{{ ad.status }}</td>
-                                    <td>
-                                        {% if ad.passed %}
-                                        <span class="badge bg-success">Прошло проверку</span>
-                                        {% else %}
-                                        <span class="badge bg-danger">Не прошло проверку</span><br>
-                                        <small>{{ ad.reason }}</small>
-                                        {% endif %}
-                                    </td>
+    <!-- Индикатор загрузки -->
+    <div class="loader-container" id="loaderContainer">
+        <div class="loader"></div>
+        <p class="mt-2">Проверка кампании, пожалуйста подождите...</p>
+    </div>
+    
+    <!-- Сообщение об ошибке -->
+    <div class="error-message" id="errorMessage"></div>
+    
+    <!-- Контейнер с результатами -->
+    <div class="results-container" id="resultsContainer">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5>Информация о кампании</h5>
+            </div>
+            <div class="card-body">
+                <table class="table table-bordered">
+                    <tr>
+                        <th width="20%">ID кампании:</th>
+                        <td>{{ campaign.campaign_id }}</td>
+                    </tr>
+                    <tr>
+                        <th>Название:</th>
+                        <td>{{ campaign.name }}</td>
+                    </tr>
+                    <tr>
+                        <th>Статус:</th>
+                        <td>{{ campaign.status }}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5>Результаты проверки</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-bordered table-hover" id="resultsTable">
+                        <thead>
+                            <tr>
+                                <th>ID объявления</th>
+                                <th>Название</th>
+                                <th>Статус</th>
+                                <th>Расход</th>
+                                <th>Конверсии</th>
+                                <th>Причина</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if results %}
+                                {% for result in results %}
+                                <tr class="{% if result.action == 'disable' %}table-danger{% elif result.status == 'warning' %}table-warning{% else %}table-success{% endif %}">
+                                    <td>{{ result.ad_id }}</td>
+                                    <td>{{ result.name }}</td>
+                                    <td>{{ result.status }}</td>
+                                    <td>{{ result.spend }}</td>
+                                    <td>{{ result.conversions }}</td>
+                                    <td>{{ result.reason }}</td>
                                 </tr>
                                 {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                            {% endif %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
-    </div>
-    
-    <div class="row">
-        <div class="col-md-12 mb-4">
-            <div class="card">
-                <div class="card-header bg-secondary text-white">
-                    <h5 class="mb-0">Перепроверить кампанию</h5>
-                </div>
-                <div class="card-body">
-                    <form method="get" action="{{ url_for('check_campaign', campaign_id=results.campaign_id) }}">
-                        <div class="row">
-                            <div class="col-md-8 mb-3">
-                                <label for="check_period" class="form-label">Период проверки:</label>
-                                <select name="check_period" id="check_period" class="form-select">
-                                    <option value="today" {{ 'selected' if results.check_period == 'today' else '' }}>Сегодня</option>
-                                    <option value="last2days" {{ 'selected' if results.check_period == 'last2days' else '' }}>Последние 2 дня</option>
-                                    <option value="last3days" {{ 'selected' if results.check_period == 'last3days' else '' }}>Последние 3 дня</option>
-                                    <option value="last7days" {{ 'selected' if results.check_period == 'last7days' else '' }}>Последние 7 дней</option>
-                                    <option value="alltime" {{ 'selected' if results.check_period == 'alltime' else '' }}>Все время</option>
-                                </select>
-                            </div>
-                            <div class="col-md-4 mb-3 d-flex align-items-end">
-                                <button type="submit" class="btn btn-primary">Перепроверить</button>
-                            </div>
-                        </div>
-                    </form>
-                </div>
-            </div>
-        </div>
-    </div>
-    {% else %}
-    <div class="alert alert-info">
-        Нет данных для отображения. Пожалуйста, проверьте правильность ID кампании или повторите запрос позже.
-    </div>
-    {% endif %}
-    
-    <div class="mt-3">
-        <a href="{{ url_for('campaigns') }}" class="btn btn-secondary">Вернуться к списку кампаний</a>
     </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='js/campaign_checker.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Дополнительный JavaScript код при необходимости
+        const campaignId = '{{ campaign.campaign_id }}';
+        const checkForm = document.getElementById('checkForm');
+        const checkButton = document.getElementById('checkButton');
+        const loaderContainer = document.getElementById('loaderContainer');
+        const errorMessage = document.getElementById('errorMessage');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        // Показываем результаты, если они уже есть
+        {% if results %}
+            resultsContainer.style.display = 'block';
+        {% endif %}
+        
+        // Обработка отправки формы
+        checkForm.addEventListener('submit', function(event) {
+            event.preventDefault();
+            
+            // Получаем выбранный период
+            const checkPeriod = document.getElementById('checkPeriod').value;
+            
+            // Блокируем кнопку и показываем индикатор загрузки
+            checkButton.disabled = true;
+            loaderContainer.style.display = 'block';
+            errorMessage.style.display = 'none';
+            resultsContainer.style.display = 'none';
+            
+            // Создаем проверку кампании
+            const checker = new CampaignChecker(campaignId, {
+                checkPeriod: checkPeriod,
+                callbacks: {
+                    onStart: function() {
+                        console.log('Проверка начата');
+                    },
+                    onSuccess: function(results) {
+                        // Отображаем результаты
+                        renderResultsToTable(results, '#resultsTable');
+                        resultsContainer.style.display = 'block';
+                    },
+                    onError: function(error) {
+                        // Показываем сообщение об ошибке
+                        errorMessage.textContent = error.message || 'Произошла ошибка при проверке кампании';
+                        errorMessage.style.display = 'block';
+                    },
+                    onComplete: function() {
+                        // Разблокируем кнопку и скрываем индикатор загрузки
+                        checkButton.disabled = false;
+                        loaderContainer.style.display = 'none';
+                    }
+                }
+            });
+            
+            // Запускаем проверку
+            checker.check();
+        });
     });
 </script>
 {% endblock %} 
