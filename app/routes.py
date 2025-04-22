@@ -510,14 +510,21 @@ def check_campaign_setup(id):
 @bp.route('/campaigns/check/<string:campaign_id>', methods=['GET', 'POST'])
 @login_required
 def check_campaign(campaign_id):
-    # Получить настройки кампании
-    setup = Setup.query.filter_by(campaign_id=campaign_id).first()
-    check_period = request.args.get('check_period', 'today')
+    # Получаем настройки кампании
+    campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+    
+    if not campaign_setup:
+        flash('Настройки для кампании не найдены', 'danger')
+        return redirect(url_for('main.campaigns'))
+    
+    # Получаем настройки и берем период проверки из них
+    setup = Setup.query.get(campaign_setup.setup_id)
+    check_period = setup.check_period if setup and setup.check_period else 'today'
     
     # Если это AJAX запрос, начинаем проверку в фоновом режиме
     if request.is_json and request.method == 'POST':
         data = request.get_json()
-        check_period = data.get('check_period', 'today')
+        # Игнорируем период из запроса, используем период из настроек
         
         # Создать уникальный ID для проверки
         check_id = str(uuid.uuid4())
@@ -542,11 +549,15 @@ def check_campaign(campaign_id):
             'check_id': check_id
         })
     
+    # Получаем информацию о кампании для отображения
+    fb_client = create_fb_client_for_user(current_user)
+    campaign = fb_client.get_campaign(campaign_id) if fb_client else {}
+    
     # Если это обычный GET запрос, вернуть шаблон
     return render_template('campaigns/check_report.html', 
-                           campaign_id=campaign_id, 
-                           setup=setup,
-                           check_period=check_period)
+                          campaign=campaign, 
+                          setup=setup,
+                          check_period=check_period)
 
 def perform_campaign_check(check_id, campaign_id, check_period, setup):
     """Выполняет проверку кампании в фоновом режиме"""
@@ -1168,10 +1179,6 @@ def async_check_campaign(campaign_id):
 def api_check_campaign(campaign_id):
     """API для проверки кампании с возвратом результатов в JSON"""
     try:
-        # Получаем период проверки
-        check_period = request.json.get('check_period', 'today')
-        app.logger.info(f"Запрос на проверку кампании {campaign_id} с периодом {check_period}")
-        
         # Находим настройки кампании, чтобы получить setup_id
         campaign_setup = CampaignSetup.query.filter_by(
             campaign_id=campaign_id, 
@@ -1185,6 +1192,11 @@ def api_check_campaign(campaign_id):
                 'error': f'Настройки для кампании {campaign_id} не найдены'
             }), 404
             
+        # Получаем настройки и берем период проверки из них
+        setup = Setup.query.get(campaign_setup.setup_id)
+        check_period = setup.check_period if setup and setup.check_period else 'today'
+        
+        app.logger.info(f"Запрос на проверку кампании {campaign_id} с периодом {check_period}")
         app.logger.info(f"Найден setup_id: {campaign_setup.setup_id} для кампании {campaign_id}")
         
         # Вызываем функцию проверки с корректными параметрами
@@ -1243,6 +1255,7 @@ def api_check_campaign(campaign_id):
             'success': True,
             'results': formatted_results,
             'campaign_id': campaign_id,
+            'check_period': check_period,
             'summary': {
                 'total': len(formatted_results),
                 'toDisable': sum(1 for r in formatted_results if r['action'] == 'disable'),

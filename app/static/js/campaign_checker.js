@@ -6,12 +6,10 @@ class CampaignChecker {
      * Конструктор
      * @param {string} campaignId - ID кампании для проверки
      * @param {Object} options - Опции для проверки
-     * @param {string} options.checkPeriod - Период проверки (today, last2days, last3days, last7days, alltime)
      * @param {Object} options.callbacks - Колбеки для разных этапов проверки
      */
     constructor(campaignId, options = {}) {
         this.campaignId = campaignId;
-        this.checkPeriod = options.checkPeriod || 'today';
         this.callbacks = options.callbacks || {};
         this.checkId = null;
         this.pollingInterval = null;
@@ -31,9 +29,7 @@ class CampaignChecker {
                 'X-Requested-With': 'XMLHttpRequest',
                 'X-CSRFToken': document.querySelector('meta[name="csrf-token"]').content
             },
-            body: JSON.stringify({
-                check_period: this.checkPeriod
-            })
+            body: JSON.stringify({})
         })
         .then(response => {
             if (!response.ok) {
