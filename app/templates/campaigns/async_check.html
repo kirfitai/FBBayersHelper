@@ -15,10 +15,9 @@
             <p><strong>Настройки пороговых значений:</strong> 
                 {% if campaign_setup %}
                     <ul>
-                        <li>CPC: {{ campaign_setup.cpc }}</li>
-                        <li>CPM: {{ campaign_setup.cpm }}</li>
-                        <li>Затраты: {{ campaign_setup.costs }}</li>
-                        <li>Минимальные конверсии: {{ campaign_setup.conversions }}</li>
+                        {% for threshold in campaign_setup.thresholds %}
+                        <li>Расход: {{ threshold.spend }}, Конверсии: {{ threshold.conversions }}</li>
+                        {% endfor %}
                         <li>Период проверки: {{ campaign_setup.check_period }}</li>
                     </ul>
                 {% else %}
@@ -67,9 +66,7 @@
                                 <th>ID объявления</th>
                                 <th>Имя объявления</th>
                                 <th>Статус</th>
-                                <th>CPC</th>
-                                <th>CPM</th>
-                                <th>Затраты</th>
+                                <th>Расход</th>
                                 <th>Конверсии</th>
                                 <th>Статус проверки</th>
                                 <th>Причина</th>
@@ -89,7 +86,7 @@
     </div>
     
     <div class="mb-4">
-        <a href="{{ url_for('bp.campaign_list') }}" class="btn btn-secondary">Вернуться к списку кампаний</a>
+        <a href="{{ url_for('main.campaigns') }}" class="btn btn-secondary">Вернуться к списку кампаний</a>
         <button id="refresh-btn" class="btn btn-primary">Обновить проверку</button>
     </div>
 </div>
@@ -175,9 +172,9 @@
                 const row = document.createElement('tr');
                 
                 // Определение класса строки в зависимости от результата проверки
-                if (result.check_result === 'disable') {
+                if (result.action === 'disable') {
                     row.classList.add('table-danger');
-                } else if (result.check_result === 'warning') {
+                } else if (result.status === 'warning') {
                     row.classList.add('table-warning');
                 } else {
                     row.classList.add('table-success');
@@ -185,13 +182,11 @@
                 
                 row.innerHTML = `
                     <td>${result.ad_id}</td>
-                    <td>${result.ad_name}</td>
-                    <td>${result.status}</td>
-                    <td>${result.cpc ? result.cpc.toFixed(2) : 'N/A'}</td>
-                    <td>${result.cpm ? result.cpm.toFixed(2) : 'N/A'}</td>
-                    <td>${result.spend ? result.spend.toFixed(2) : '0.00'}</td>
-                    <td>${result.conversions || '0'}</td>
-                    <td>${getCheckResultText(result.check_result)}</td>
+                    <td>${result.name || '-'}</td>
+                    <td>${result.status || '-'}</td>
+                    <td>${result.spend !== undefined ? result.spend : '0.00'}</td>
+                    <td>${result.conversions !== undefined ? result.conversions : '0'}</td>
+                    <td>${result.action || 'Активно'}</td>
                     <td>${result.reason || '-'}</td>
                 `;
                 
@@ -199,20 +194,6 @@
             });
             
             resultContainer.style.display = 'block';
-        }
-        
-        // Вспомогательная функция для получения текста статуса проверки
-        function getCheckResultText(result) {
-            switch(result) {
-                case 'disable':
-                    return 'Отключить';
-                case 'warning':
-                    return 'Предупреждение';
-                case 'ok':
-                    return 'OK';
-                default:
-                    return result || 'Неизвестно';
-            }
         }
         
         // Обработчик нажатия кнопки обновления

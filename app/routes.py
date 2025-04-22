@@ -1132,23 +1132,34 @@ def run_campaign_check_in_background(campaign_id, setup_id, check_period, status
 @login_required
 def async_check_campaign(campaign_id):
     """Страница асинхронной проверки кампании"""
-    campaign = get_ad_campaign(campaign_id)
+    # Ищем кампанию в сессии
+    campaign = None
+    campaigns = session.get('campaigns', [])
+    for c in campaigns:
+        if c.get('id') == campaign_id:
+            campaign = c
+            break
+    
     if not campaign:
-        flash('Кампания не найдена', 'danger')
-        return redirect(url_for('bp.campaign_list'))
+        # Если кампания не найдена, создаем минимальный объект
+        campaign = {'id': campaign_id, 'name': f'Кампания {campaign_id}'}
     
     # Получаем настройки кампании
-    campaign_setup = Setup.query.filter_by(campaign_id=campaign_id).first()
+    campaign_setup = CampaignSetup.query.filter_by(
+        campaign_id=campaign_id, 
+        user_id=current_user.id
+    ).first()
+    
     check_period = request.args.get('check_period', 'today')
     
-    if campaign_setup and campaign_setup.check_period and not check_period:
-        check_period = campaign_setup.check_period
+    if campaign_setup and hasattr(campaign_setup, 'setup') and campaign_setup.setup.check_period and not check_period:
+        check_period = campaign_setup.setup.check_period
     
     return render_template(
         'campaigns/async_check.html',
         campaign_id=campaign_id,
         campaign_name=campaign.get('name', 'Неизвестная кампания'),
-        campaign_setup=campaign_setup,
+        campaign_setup=campaign_setup.setup if campaign_setup else None,
         check_period=check_period
     )
 
@@ -1157,8 +1168,28 @@ def async_check_campaign(campaign_id):
 def api_check_campaign(campaign_id):
     """API для проверки кампании с возвратом результатов в JSON"""
     try:
+        # Получаем период проверки
         check_period = request.json.get('check_period', 'today')
-        results = check_campaign_thresholds(campaign_id, check_period=check_period)
+        
+        # Находим настройки кампании, чтобы получить setup_id
+        campaign_setup = CampaignSetup.query.filter_by(
+            campaign_id=campaign_id, 
+            user_id=current_user.id
+        ).first()
+        
+        if not campaign_setup:
+            return jsonify({
+                'success': False,
+                'error': f'Настройки для кампании {campaign_id} не найдены'
+            }), 404
+        
+        # Вызываем функцию проверки с корректными параметрами
+        from app.scheduler import check_campaign_thresholds
+        results = check_campaign_thresholds(
+            campaign_id=campaign_id, 
+            setup_id=campaign_setup.setup_id,
+            check_period=check_period
+        )
         
         if not results:
             return jsonify({
@@ -1166,9 +1197,23 @@ def api_check_campaign(campaign_id):
                 'error': 'Нет результатов проверки'
             }), 404
             
+        # Преобразуем результаты в формат, ожидаемый клиентом
+        formatted_results = []
+        if 'ads_results' in results:
+            for ad in results['ads_results']:
+                formatted_results.append({
+                    'ad_id': ad.get('ad_id'),
+                    'name': ad.get('ad_name'),
+                    'status': ad.get('status'),
+                    'spend': ad.get('spend'),
+                    'conversions': ad.get('conversions'),
+                    'action': 'disable' if not ad.get('passed') else 'active',
+                    'reason': ad.get('reason')
+                })
+        
         return jsonify({
             'success': True,
-            'results': results,
+            'results': formatted_results,
             'campaign_id': campaign_id
         })
     except Exception as e:
