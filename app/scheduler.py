@@ -125,7 +125,7 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         # Создаем клиент Facebook API
         fb_client = FacebookAdClient(
             access_token=user.fb_access_token,
-            ad_account_id=user.fb_ad_account_id
+            ad_account_id=user.fb_account_id
         )
         
         # Получаем объявления для кампании
