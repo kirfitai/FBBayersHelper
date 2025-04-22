@@ -122,11 +122,8 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         
         logger.info(f"Проверка кампании для пользователя {user.username} (ID: {user.id})")
         
-        # Создаем клиент Facebook API
-        fb_client = FacebookAdClient(
-            access_token=user.fb_access_token,
-            ad_account_id=user.fb_account_id
-        )
+        # Создаем клиент Facebook API с помощью вспомогательной функции
+        fb_client = create_fb_client_for_user(user)
         
         # Получаем объявления для кампании
         if progress_callback:
@@ -304,4 +301,36 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         if progress_callback:
             progress_callback('error', 0, 1, f'Ошибка: {str(e)}')
             
-        return {'error': str(e)} 
+        return {'error': str(e)}
+
+def create_fb_client_for_user(user):
+    """
+    Создаёт клиент Facebook API для пользователя
+    
+    Args:
+        user (User): Объект пользователя
+    
+    Returns:
+        FacebookAdClient: Инициализированный клиент API
+    """
+    from app.services.fb_api_client import FacebookAdClient
+    
+    # Получаем действующий токен
+    active_token = None
+    if user.active_token_id:
+        from app.models.facebook_token import FacebookToken
+        active_token = FacebookToken.query.get(user.active_token_id)
+    
+    # Если есть активный токен, используем его
+    if active_token and active_token.status == 'valid':
+        fb_client = FacebookAdClient(token_obj=active_token)
+    else:
+        # Иначе используем прямые учетные данные пользователя
+        fb_client = FacebookAdClient(
+            access_token=user.fb_access_token,
+            app_id=user.fb_app_id,
+            app_secret=user.fb_app_secret,
+            ad_account_id=user.fb_account_id
+        )
+    
+    return fb_client 
