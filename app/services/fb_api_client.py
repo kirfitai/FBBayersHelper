@@ -426,17 +426,17 @@ class FacebookAdClient:
                     if current_attempt < max_attempts:
                         logger.info(f"[FacebookAdClient] Пауза перед следующей попыткой...")
                         time.sleep(3 * current_attempt)
-                    else:
+                else:
                         logger.error(f"[FacebookAdClient] Все попытки израсходованы, не удалось получить объявления")
                         return []
                         
             # Если мы дошли до этого места, значит все попытки не удались
-            return []
+                    return []
             
         except Exception as e:
             logger.error(f"[FacebookAdClient] Критическая ошибка при получении объявлений: {str(e)}")
             logger.error(traceback.format_exc())
-            return []
+                return []
     
     def get_ad_insights(self, ad_id, date_preset='today', time_range=None, fields=None, timeout=120):
         """
@@ -773,7 +773,7 @@ class FacebookAdClient:
         except Exception as e:
             logger.error(f"Ошибка при получении статистики для кампании {campaign_id}: {str(e)}")
             return {'campaign_id': campaign_id, 'spend': 0}
-            
+    
     def update_campaign_status(self, campaign_id, status, timeout=60):
         """
         Обновление статуса кампании
