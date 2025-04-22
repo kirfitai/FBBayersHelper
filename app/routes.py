@@ -1170,6 +1170,7 @@ def api_check_campaign(campaign_id):
     try:
         # Получаем период проверки
         check_period = request.json.get('check_period', 'today')
+        app.logger.info(f"Запрос на проверку кампании {campaign_id} с периодом {check_period}")
         
         # Находим настройки кампании, чтобы получить setup_id
         campaign_setup = CampaignSetup.query.filter_by(
@@ -1178,46 +1179,80 @@ def api_check_campaign(campaign_id):
         ).first()
         
         if not campaign_setup:
+            app.logger.warning(f"Настройки для кампании {campaign_id} не найдены")
             return jsonify({
                 'success': False,
                 'error': f'Настройки для кампании {campaign_id} не найдены'
             }), 404
+            
+        app.logger.info(f"Найден setup_id: {campaign_setup.setup_id} для кампании {campaign_id}")
         
         # Вызываем функцию проверки с корректными параметрами
         from app.scheduler import check_campaign_thresholds
+        app.logger.info(f"Запуск проверки с параметрами: campaign_id={campaign_id}, setup_id={campaign_setup.setup_id}, check_period={check_period}")
+        
         results = check_campaign_thresholds(
             campaign_id=campaign_id, 
             setup_id=campaign_setup.setup_id,
             check_period=check_period
         )
         
+        # Анализируем результаты
         if not results:
+            app.logger.warning(f"Нет результатов проверки для кампании {campaign_id}")
             return jsonify({
                 'success': False,
                 'error': 'Нет результатов проверки'
             }), 404
             
+        # Сообщаем о результатах
+        if 'error' in results:
+            app.logger.error(f"Ошибка проверки кампании: {results['error']}")
+            return jsonify({
+                'success': False,
+                'error': results['error']
+            }), 500
+            
+        app.logger.info(f"Получены результаты проверки: {len(results.get('ads_results', []))} объявлений проверено")
+            
         # Преобразуем результаты в формат, ожидаемый клиентом
         formatted_results = []
         if 'ads_results' in results:
             for ad in results['ads_results']:
-                formatted_results.append({
+                action = 'disable' if not ad.get('passed') else 'active'
+                
+                formatted_ad = {
                     'ad_id': ad.get('ad_id'),
                     'name': ad.get('ad_name'),
                     'status': ad.get('status'),
                     'spend': ad.get('spend'),
                     'conversions': ad.get('conversions'),
-                    'action': 'disable' if not ad.get('passed') else 'active',
+                    'action': action,
                     'reason': ad.get('reason')
-                })
+                }
+                
+                formatted_results.append(formatted_ad)
+                
+                # Логируем объявления, которые должны быть отключены
+                if action == 'disable':
+                    app.logger.info(f"Объявление для отключения: {ad.get('ad_id')} - {ad.get('ad_name')}, причина: {ad.get('reason')}")
+        
+        app.logger.info(f"Подготовлено {len(formatted_results)} результатов для клиента")
         
         return jsonify({
             'success': True,
             'results': formatted_results,
-            'campaign_id': campaign_id
+            'campaign_id': campaign_id,
+            'summary': {
+                'total': len(formatted_results),
+                'toDisable': sum(1 for r in formatted_results if r['action'] == 'disable'),
+                'active': sum(1 for r in formatted_results if r['action'] == 'active'),
+            }
         })
     except Exception as e:
-        app.logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
+        import traceback
+        app.logger.error(f"Ошибка при проверке кампании {campaign_id}: {str(e)}")
+        app.logger.error(traceback.format_exc())
         return jsonify({
             'success': False,
             'error': str(e)
