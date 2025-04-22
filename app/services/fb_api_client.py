@@ -618,25 +618,39 @@ class FacebookAdClient:
         logger.info(f"Пауза {pause_time} секунд перед запросом на отключение")
         time.sleep(pause_time)
         
-        # Формируем URL с параметрами напрямую
-        url = f"{FB_GRAPH_URL}/{ad_id}?status=PAUSED&access_token={self.access_token}"
-        logger.info(f"Отправка запроса на URL: {url.replace(self.access_token, 'ACCESS_TOKEN_HIDDEN')}")
+        # Формируем URL запроса
+        api_url = f"{FB_GRAPH_URL}/{ad_id}"
+        params = {
+            'status': 'PAUSED',
+            'access_token': self.access_token
+        }
+        
+        logger.info(f"Отправка запроса на URL: {api_url} с параметром status=PAUSED")
         
         try:
-            # Отправляем POST запрос напрямую
-            response = requests.post(url, timeout=timeout)
+            # Отправляем POST запрос с параметрами
+            response = requests.post(api_url, params=params, timeout=timeout)
+            
+            # Подробно логируем ответ
+            logger.info(f"Статус ответа: {response.status_code}")
+            logger.info(f"Тело ответа: {response.text}")
             
             if response.status_code == 200:
-                response_data = response.json()
-                logger.info(f"Ответ API на отключение: {response_data}")
-                
-                # Проверяем success в ответе
-                if response_data.get('success'):
-                    logger.info(f"Объявление {ad_id} успешно отключено")
-                    return True
-                else:
-                    logger.warning(f"API вернул успешный ответ, но без success=true: {response_data}")
-                    # Считаем успешным, если получили код 200
+                try:
+                    response_data = response.json()
+                    logger.info(f"Ответ API на отключение: {response_data}")
+                    
+                    # Проверяем success в ответе
+                    if response_data.get('success'):
+                        logger.info(f"Объявление {ad_id} успешно отключено (success=true в ответе)")
+                        return True
+                    else:
+                        logger.warning(f"API вернул успешный код, но без success=true: {response_data}")
+                        # Если получили код 200, считаем операцию успешной даже без success=true в ответе
+                        return True
+                except json.JSONDecodeError:
+                    logger.warning(f"Не удалось декодировать JSON из ответа: {response.text}")
+                    # Если получили код 200, считаем операцию успешной даже при ошибке парсинга JSON
                     return True
             else:
                 error_message = response.text

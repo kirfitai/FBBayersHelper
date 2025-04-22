@@ -64,6 +64,10 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         dict: Результаты проверки
     """
     try:
+        # Настраиваем логгер
+        logger = logging.getLogger('app')
+        logger.info(f"Запуск проверки кампании {campaign_id}, setup_id={setup_id}, period={check_period}")
+
         # Сообщаем о начале проверки
         if progress_callback:
             progress_callback('setup', 0, 1, 'Получение настроек кампании...')
@@ -72,20 +76,29 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         from app.models.setup import Setup
         setup = Setup.query.get(setup_id)
         if not setup:
+            logger.error(f"Настройки с ID {setup_id} не найдены")
             return {'error': f'Настройки с ID {setup_id} не найдены'}
+        
+        logger.info(f"Найдены настройки: {setup.name}")
         
         # Получаем даты для проверки
         date_from, date_to = calculate_date_range_for_period(check_period)
+        logger.info(f"Период проверки: с {date_from} по {date_to}")
         
         # Получаем пороги для проверки
         thresholds = setup.get_thresholds_as_list() if setup.thresholds else []
+        logger.info(f"Получены пороги: {thresholds}")
+        
         if not thresholds:
+            logger.error("Не заданы пороги для проверки")
             return {'error': 'Не заданы пороги для проверки'}
         
         # Используем первый порог из настроек
         threshold = thresholds[0]
         setup_spend = threshold.get('spend', 0)
         setup_conversions = threshold.get('conversions', 0)
+        
+        logger.info(f"Используем порог: расход >= {setup_spend}, конверсии < {setup_conversions}")
         
         # Подключаемся к Facebook API
         if progress_callback:
@@ -98,12 +111,16 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         # Получаем настройки кампании
         campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
         if not campaign_setup:
+            logger.error(f"Настройки для кампании {campaign_id} не найдены")
             return {'error': f'Настройки для кампании {campaign_id} не найдены'}
         
         # Получаем пользователя
         user = User.query.get(campaign_setup.user_id)
         if not user:
+            logger.error(f"Пользователь не найден для campaign_setup.user_id={campaign_setup.user_id}")
             return {'error': f'Пользователь не найден'}
+        
+        logger.info(f"Проверка кампании для пользователя {user.username} (ID: {user.id})")
         
         # Создаем клиент Facebook API
         fb_client = FacebookAdClient(
@@ -115,9 +132,14 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         if progress_callback:
             progress_callback('ads', 0, 1, 'Получение списка объявлений...')
             
+        logger.info(f"Запрашиваем объявления для кампании {campaign_id}")
         ads = fb_client.get_ads_in_campaign(campaign_id)
+        
         if not ads:
-            return {'error': 'Объявления не найдены'}
+            logger.warning(f"Объявления не найдены для кампании {campaign_id}")
+            return {'error': 'Объявления не найдены', 'campaign_id': campaign_id}
+        
+        logger.info(f"Получено {len(ads)} объявлений")
         
         # Получаем конверсии для объявлений
         insights_results = []
@@ -130,16 +152,21 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
         if progress_callback:
             progress_callback('insights', 0, total_ads, f'Анализ объявлений (0/{total_ads})...')
         
+        logger.info(f"Начинаем проверку {total_ads} объявлений")
+        
         # Проверяем каждое объявление по очереди
         for index, ad in enumerate(ads):
             ad_id = ad.get('id')
             ad_name = ad.get('name')
             ad_status = ad.get('status')
             
+            logger.info(f"Проверка объявления {index+1}/{total_ads}: {ad_name} (ID: {ad_id}, статус: {ad_status})")
+            
             if progress_callback:
                 progress_callback('insights', index, total_ads, f'Анализ объявления {index+1}/{total_ads}: {ad_name}')
             
             # Получаем данные о конверсиях для объявления
+            logger.info(f"Запрашиваем статистику для объявления {ad_id} с {date_from} по {date_to}")
             insights = fb_client.get_ad_insights(
                 ad_id=ad_id,
                 date_from=date_from,
@@ -148,6 +175,7 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
             
             # Если данных нет, объявление не имеет статистики
             if not insights:
+                logger.info(f"Нет данных о статистике для объявления {ad_id}")
                 result = {
                     'ad_id': ad_id,
                     'ad_name': ad_name,
@@ -167,12 +195,15 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
             conversions = int(insights.get('conversions', 0))
             ref = insights.get('ref')
             
+            logger.info(f"Объявление {ad_id}: расход=${spend:.2f}, конверсии={conversions}")
+            
             # Проверяем, соответствует ли объявление требованиям
             passed = True
             reason = None
             
             # Не отключаем объявления, которые уже отключены или в архиве
             if ad_status.lower() not in ['active', 'paused']:
+                logger.info(f"Объявление {ad_id} уже имеет статус {ad_status}, пропускаем")
                 result = {
                     'ad_id': ad_id,
                     'ad_name': ad_name,
@@ -192,6 +223,7 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
             if spend >= setup_spend and conversions < setup_conversions:
                 passed = False
                 reason = f'Расход ${spend:.2f} >= ${setup_spend:.2f} и конверсий {conversions} < {setup_conversions}'
+                logger.warning(f"Объявление {ad_id} не соответствует требованиям: {reason}")
                 
                 # Отключаем объявление только если оно активно
                 if ad_status.lower() == 'active':
@@ -204,10 +236,17 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
                         )
                         
                     # Отключаем объявление
-                    result = fb_client.disable_ad(ad_id)
+                    logger.info(f"Отключаем объявление {ad_id}")
+                    disable_result = fb_client.disable_ad(ad_id)
                     
-                    if result.get('success'):
+                    # Функция disable_ad возвращает True/False, а не словарь
+                    if disable_result is True:
+                        logger.info(f"Объявление {ad_id} успешно отключено")
                         ads_disabled += 1
+                        # Обновляем статус в результате
+                        ad_status = 'PAUSED'
+                    else:
+                        logger.error(f"Ошибка при отключении объявления {ad_id}")
                 
             # Формируем результат для объявления
             result = {
@@ -247,6 +286,8 @@ def check_campaign_thresholds(campaign_id, setup_id, check_period='today', progr
             'passed_ads': passed_ads,
             'failed_ads': failed_ads
         }
+        
+        logger.info(f"Проверка завершена. Проверено {len(ads)} объявлений, отключено {ads_disabled}")
         
         return result
         
