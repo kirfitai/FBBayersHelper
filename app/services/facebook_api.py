@@ -12,25 +12,46 @@ import json
 # Настройка логирования
 logger = logging.getLogger(__name__)
 
+# Заглушка для совместимости со старым кодом
 class FacebookAPI:
     """
-    Класс-обертка для обеспечения обратной совместимости со старым кодом,
-    который ожидает класс FacebookAPI
+    Класс для работы с Facebook API (обертка для совместимости)
     """
-    def __init__(self, access_token, app_id=None, app_secret=None, ad_account_id=None):
-        try:
-            logger.info(f"[FacebookAPI] Инициализация FacebookAPI с параметрами: access_token={len(access_token) if access_token else 'None'}, app_id={app_id}, app_secret={len(app_secret) if app_secret else 'None'}, ad_account_id={ad_account_id}")
-            # Игнорируем ad_account_id, если он передан
-            if ad_account_id:
-                logger.warning(f"[FacebookAPI] Параметр ad_account_id проигнорирован: {ad_account_id}")
-                
-            self.client = FacebookAdClient(access_token, app_id, app_secret)
-            logger.info("[FacebookAPI] Инициализирована обертка для FacebookAdClient")
-        except Exception as e:
-            logger.error(f"[FacebookAPI] Ошибка при инициализации: {str(e)}")
-            logger.error(traceback.format_exc())
-            raise
-    
+    def __init__(self, user):
+        self.user = user
+        logger.info(f"Инициализация FacebookAPI для пользователя {user.id}")
+        
+    def get_campaign_stats(self, campaign_id, date_preset=None):
+        """Получение статистики кампании"""
+        logger.info(f"Получение статистики для кампании {campaign_id} (заглушка)")
+        return {
+            'spend': 0,
+            'conversions': 0
+        }
+        
+    def update_campaign_status(self, campaign_id, status):
+        """Обновление статуса кампании"""
+        logger.info(f"Обновление статуса кампании {campaign_id} на {status} (заглушка)")
+        return True
+        
+    def get_ads_in_campaign(self, campaign_id):
+        """Получение объявлений в кампании"""
+        logger.info(f"Получение объявлений для кампании {campaign_id} (заглушка)")
+        return []
+        
+    def get_ad_insights(self, ad_id, date_from=None, date_to=None):
+        """Получение статистики по объявлению"""
+        logger.info(f"Получение статистики для объявления {ad_id} (заглушка)")
+        return {
+            'spend': 0,
+            'conversions': 0
+        }
+        
+    def disable_ad(self, ad_id):
+        """Отключение объявления"""
+        logger.info(f"Отключение объявления {ad_id} (заглушка)")
+        return True
+
     def get_campaign_stats(self, campaign_id, date_preset='today', timeout=120):
         """
         Получение статистики по кампании
