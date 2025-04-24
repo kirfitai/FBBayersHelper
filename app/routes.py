@@ -510,79 +510,34 @@ def check_campaign_setup(id):
 @bp.route('/campaigns/check/<string:campaign_id>', methods=['GET', 'POST'])
 @login_required
 def check_campaign(campaign_id):
-    # Получаем настройки кампании
-    campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+    # Устанавливаем период проверки по умолчанию
+    check_period = request.args.get('check_period', 'today')
     
-    if not campaign_setup:
-        flash('Настройки для кампании не найдены', 'danger')
-        return redirect(url_for('main.campaigns'))
-    
-    # Получаем настройки и берем период проверки из них
-    setup = Setup.query.get(campaign_setup.setup_id)
-    check_period = setup.check_period if setup and setup.check_period else 'today'
-    
-    # Если это AJAX запрос, начинаем проверку в фоновом режиме
-    if request.is_json and request.method == 'POST':
-        data = request.get_json()
-        # Игнорируем период из запроса, используем период из настроек
-        
-        # Создать уникальный ID для проверки
-        check_id = str(uuid.uuid4())
-        
-        # Установить начальный статус
-        app.check_tasks[check_id] = {
-            'status': 'started',
-            'campaign_id': campaign_id,
-            'check_period': check_period,
-            'results': [],
-            'error': None
-        }
-        
-        # Запустить проверку в отдельном потоке
-        thread = Thread(target=perform_campaign_check, args=(check_id, campaign_id, check_period, setup))
-        thread.daemon = True
-        thread.start()
-        
-        # Вернуть ID проверки для последующих запросов статуса
-        return jsonify({
-            'status': 'started',
-            'check_id': check_id
-        })
-    
-    # Получаем информацию о кампании для отображения
-    fb_client = create_fb_client_for_user(current_user)
-    campaign = fb_client.get_campaign(campaign_id) if fb_client else {}
-    
-    # Если это обычный GET запрос, вернуть шаблон
-    return render_template('campaigns/check_report.html', 
-                          campaign=campaign, 
-                          setup=setup,
-                          check_period=check_period)
-
-def perform_campaign_check(check_id, campaign_id, check_period, setup):
-    """Выполняет проверку кампании в фоновом режиме"""
     try:
-        # Получить результаты проверки
-        results = scheduler.check_campaign_thresholds(campaign_id, setup, check_period)
+        # Выполняем проверку кампании с использованием функции check_campaign_thresholds
+        results = scheduler.check_campaign_thresholds(campaign_id, check_period)
         
-        # Обновить статус задачи
-        app.check_tasks[check_id] = {
-            'status': 'completed',
-            'campaign_id': campaign_id,
-            'check_period': check_period,
-            'results': results,
-            'error': None
-        }
+        # Проверяем результаты на наличие ошибок
+        if not results or 'error' in results:
+            error_msg = results.get('error', 'Unknown error') if results else 'No results returned'
+            app.logger.error(f"Error checking campaign {campaign_id}: {error_msg}")
+            flash(f'Error checking campaign: {error_msg}', 'danger')
+            return render_template('campaigns/check_report.html', 
+                                  error=error_msg,
+                                  campaign_id=campaign_id)
+        
+        # Отображаем результаты
+        return render_template('campaigns/check_report.html', 
+                              campaign=results.get('campaign', {}),
+                              results=results.get('results', []),
+                              check_period=check_period)
+    
     except Exception as e:
         app.logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
-        # Обновить статус задачи с ошибкой
-        app.check_tasks[check_id] = {
-            'status': 'error',
-            'campaign_id': campaign_id,
-            'check_period': check_period,
-            'results': [],
-            'error': str(e)
-        }
+        flash(f'Error checking campaign: {str(e)}', 'danger')
+        return render_template('campaigns/check_report.html', 
+                              error=str(e),
+                              campaign_id=campaign_id)
 
 @bp.route('/campaigns/check-status/<string:check_id>')
 @login_required
