@@ -2,6 +2,8 @@ from flask import Flask
 from config import Config
 from app.extensions import db, migrate, login_manager, csrf
 import logging
+import threading
+import time
 
 # Настройка логирования
 logger = logging.getLogger(__name__)
@@ -15,6 +17,9 @@ def create_app(config_class=Config):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
+    
+    # Глобальный словарь для хранения статусов проверки кампаний
+    app.check_tasks = {}
     
     with app.app_context():
         # Добавляем глобальную функцию для шаблонов
@@ -75,7 +80,33 @@ def create_app(config_class=Config):
             logger.error(f"[FLASK_ERROR] Request URL: {request.url}")
             logger.error(f"[FLASK_ERROR] Request method: {request.method}")
             return 'Internal Server Error - The server encountered an internal error and was unable to complete your request.', 500
+
+    # Инициализация фонового планировщика для проверки кампаний
+    if not app.debug:
+        scheduler_thread = threading.Thread(target=run_scheduler, args=(app,))
+        scheduler_thread.daemon = True
+        scheduler_thread.start()
+        logger.info("Запущен планировщик автоматических проверок кампаний")
     
     return app
+
+def run_scheduler(app):
+    """Запускает планировщик для периодических задач"""
+    with app.app_context():
+        logger.info("Запуск планировщика периодических задач")
+        
+        while True:
+            try:
+                # Запускаем проверку кампаний
+                from app.scheduler import schedule_campaign_checks
+                schedule_campaign_checks()
+                
+                # Ждем 1 минуту перед следующей проверкой
+                time.sleep(60)
+            except Exception as e:
+                logger.error(f"Ошибка в планировщике задач: {str(e)}")
+                import traceback
+                logger.error(traceback.format_exc())
+                time.sleep(60)  # Ждем минуту перед следующей попыткой
 
 # Не импортируйте ничего здесь, чтобы избежать циклических импортов

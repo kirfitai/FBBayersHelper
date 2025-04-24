@@ -50,118 +50,236 @@ def calculate_date_range_for_period(check_period):
     
     return {'since': since_date, 'until': until_date}
 
-def check_campaign_thresholds(campaign_id, check_period='today', access_token=None):
+def check_campaign_thresholds(campaign_id, setup_id, check_period='today'):
     """
-    Проверяет объявления в кампании по порогам и возвращает список результатов.
+    Проверяет объявления кампании и отключает те, что не соответствуют требованиям
     
     Args:
         campaign_id (str): ID кампании Facebook
-        check_period (str): Период проверки ('today', 'yesterday', '7days', '14days', '30days')
-        access_token (str, optional): Токен доступа Facebook, если None, используется глобальный
-        
+        setup_id (int): ID настроек проверки
+        check_period (str, optional): Период за который проверять статистику. 
+                                    Доступны: 'today', 'yesterday', 'last2days', 'last3days', 'last7days', 'alltime'.
+    
     Returns:
-        dict: Словарь, содержащий информацию о кампании и результаты проверки объявлений
+        dict: Результаты проверки
     """
     try:
-        # Инициализация API
-        fb_api = FacebookAPI(access_token)
+        # Настраиваем логгер
+        logger = logging.getLogger('app')
+        logger.info(f"Запуск проверки кампании {campaign_id}, setup_id={setup_id}, period={check_period}")
+
+        # Получаем настройки
+        from app.models.setup import Setup
+        setup = Setup.query.get(setup_id)
+        if not setup:
+            logger.error(f"Настройки с ID {setup_id} не найдены")
+            return {'error': f'Настройки с ID {setup_id} не найдены'}
         
-        # Получение информации о кампании
-        campaign_info = fb_api.get_campaign_stats(campaign_id)
-        if not campaign_info:
-            logging.error(f"Не удалось получить информацию о кампании {campaign_id}")
-            return {"error": "Не удалось получить информацию о кампании"}
+        logger.info(f"Найдены настройки: {setup.name}")
         
-        campaign = {
-            "id": campaign_id,
-            "name": campaign_info.get("name", "Нет данных"),
-            "status": campaign_info.get("status", "Нет данных")
-        }
+        # Получаем даты для проверки
+        date_range = calculate_date_range_for_period(check_period)
+        date_from, date_to = date_range['since'], date_range['until']
+        logger.info(f"Период проверки: с {date_from} по {date_to}")
         
-        # Получение объявлений в кампании
-        ads = fb_api.get_ads_in_campaign(campaign_id)
+        # Получаем пороги для проверки
+        thresholds = setup.get_thresholds_as_list() if setup.thresholds else []
+        logger.info(f"Получены пороги: {thresholds}")
+        
+        if not thresholds:
+            logger.error("Не заданы пороги для проверки")
+            return {'error': 'Не заданы пороги для проверки'}
+        
+        # Используем первый порог из настроек
+        threshold = thresholds[0]
+        setup_spend = threshold.get('spend', 0)
+        setup_conversions = threshold.get('conversions', 0)
+        
+        logger.info(f"Используем порог: расход >= {setup_spend}, конверсии < {setup_conversions}")
+        
+        # Подключаемся к Facebook API
+        from app.models.user import User
+        from app.models.setup import CampaignSetup
+        
+        # Получаем настройки кампании
+        campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+        if not campaign_setup:
+            logger.error(f"Настройки для кампании {campaign_id} не найдены")
+            return {'error': f'Настройки для кампании {campaign_id} не найдены'}
+        
+        # Получаем пользователя
+        user = User.query.get(campaign_setup.user_id)
+        if not user:
+            logger.error(f"Пользователь не найден для campaign_setup.user_id={campaign_setup.user_id}")
+            return {'error': f'Пользователь не найден'}
+        
+        logger.info(f"Проверка кампании для пользователя {user.username} (ID: {user.id})")
+        
+        # Создаем клиент Facebook API с помощью вспомогательной функции
+        fb_client = create_fb_client_for_user(user)
+        
+        # Проверка подключения к API
+        if not fb_client:
+            logger.error("Не удалось создать клиент Facebook API")
+            return {'error': 'Ошибка подключения к Facebook API'}
+        
+        # Получаем информацию о кампании
+        campaign = fb_client.get_campaign(campaign_id)
+        if not campaign:
+            logger.error(f"Не удалось получить информацию о кампании {campaign_id}")
+            return {'error': 'Не удалось получить информацию о кампании'}
+        
+        # Получаем объявления для кампании
+        logger.info(f"Запрашиваем объявления для кампании {campaign_id}")
+        ads = fb_client.get_ads_in_campaign(campaign_id)
+        
         if not ads:
-            logging.error(f"Не удалось получить объявления для кампании {campaign_id}")
-            return {"error": "Не удалось получить объявления для кампании"}
+            logger.warning(f"Объявления не найдены для кампании {campaign_id}")
+            return {'error': 'Объявления не найдены', 'campaign_id': campaign_id}
         
-        # Определение дат для получения статистики
-        today = datetime.datetime.now().date()
-        if check_period == 'today':
-            since = today.strftime('%Y-%m-%d')
-            until = (today + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        elif check_period == 'yesterday':
-            yesterday = today - datetime.timedelta(days=1)
-            since = yesterday.strftime('%Y-%m-%d')
-            until = today.strftime('%Y-%m-%d')
-        elif check_period == '7days':
-            since = (today - datetime.timedelta(days=7)).strftime('%Y-%m-%d')
-            until = (today + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        elif check_period == '14days':
-            since = (today - datetime.timedelta(days=14)).strftime('%Y-%m-%d')
-            until = (today + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        elif check_period == '30days':
-            since = (today - datetime.timedelta(days=30)).strftime('%Y-%m-%d')
-            until = (today + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
-        else:
-            since = today.strftime('%Y-%m-%d')
-            until = (today + datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        logger.info(f"Получено {len(ads)} объявлений")
         
-        # Пороги для проверки
-        spend_threshold = 20  # расход более 20 рублей
-        conversion_threshold = 0  # нет конверсий
+        # Получаем конверсии для объявлений
+        insights_results = []
+        passed_ads = []
+        failed_ads = []
         
-        results = []
+        total_ads = len(ads)
+        ads_disabled = 0
         
-        # Получение статистики по объявлениям и проверка порогов
-        for ad in ads:
+        logger.info(f"Начинаем проверку {total_ads} объявлений")
+        
+        # Проверяем каждое объявление по очереди
+        for index, ad in enumerate(ads):
             ad_id = ad.get('id')
             ad_name = ad.get('name')
             ad_status = ad.get('status')
             
-            # Получение статистики по объявлению за указанный период
-            insights = fb_api.get_ad_insights(ad_id, since, until)
+            logger.info(f"Проверка объявления {index+1}/{total_ads}: {ad_name} (ID: {ad_id}, статус: {ad_status})")
             
+            # Получаем данные о конверсиях для объявления
+            logger.info(f"Запрашиваем статистику для объявления {ad_id} с {date_from} по {date_to}")
+            insights = fb_client.get_ad_insights(
+                ad_id=ad_id,
+                date_from=date_from,
+                date_to=date_to
+            )
+            
+            # Если данных нет, объявление не имеет статистики
             if not insights:
-                # Если статистика недоступна, пропускаем объявление
+                logger.info(f"Нет данных о статистике для объявления {ad_id}")
+                result = {
+                    'ad_id': ad_id,
+                    'ad_name': ad_name,
+                    'ref': None,
+                    'spend': 0,
+                    'conversions': 0,
+                    'status': ad_status,
+                    'passed': True,
+                    'reason': 'Нет данных о расходах или конверсиях'
+                }
+                insights_results.append(result)
+                passed_ads.append(result)
                 continue
             
+            # Извлекаем данные о расходах и конверсиях
             spend = float(insights.get('spend', 0))
-            conversions = int(insights.get('actions', {}).get('offsite_conversion.fb_pixel_purchase', 0))
+            conversions = int(insights.get('conversions', 0))
+            ref = insights.get('ref')
             
-            status = "active"
-            reason = ""
+            logger.info(f"Объявление {ad_id}: расход=${spend:.2f}, конверсии={conversions}")
             
-            # Проверка порогов
-            if ad_status == 'ACTIVE':
-                if spend > spend_threshold and conversions <= conversion_threshold:
-                    status = "disabled"
-                    reason = f"Расход {spend} руб. без конверсий"
-                    # Отключаем объявление
-                    fb_api.disable_ad(ad_id)
-                elif spend > spend_threshold / 2 and conversions <= conversion_threshold:
-                    status = "warning"
-                    reason = f"Расход {spend} руб. с низкой конверсией"
-            elif ad_status == 'PAUSED':
-                status = "disabled"
-                reason = "Объявление приостановлено"
+            # Проверяем, соответствует ли объявление требованиям
+            passed = True
+            reason = None
             
-            results.append({
-                "id": ad_id,
-                "name": ad_name,
-                "status": status,
-                "spend": spend,
-                "conversions": conversions,
-                "reason": reason
-            })
+            # Не отключаем объявления, которые уже отключены или в архиве
+            if ad_status.lower() not in ['active', 'paused']:
+                logger.info(f"Объявление {ad_id} уже имеет статус {ad_status}, пропускаем")
+                result = {
+                    'ad_id': ad_id,
+                    'ad_name': ad_name,
+                    'ref': ref,
+                    'spend': spend,
+                    'conversions': conversions,
+                    'status': ad_status,
+                    'passed': True,
+                    'reason': f'Объявление уже имеет статус {ad_status}'
+                }
+                insights_results.append(result)
+                passed_ads.append(result)
+                continue
+            
+            # Проверяем условия отключения:
+            # Если расходы превысили порог И конверсий меньше порога
+            if spend >= setup_spend and conversions < setup_conversions:
+                passed = False
+                reason = f'Расход ${spend:.2f} >= ${setup_spend:.2f} и конверсий {conversions} < {setup_conversions}'
+                logger.warning(f"Объявление {ad_id} не соответствует требованиям: {reason}")
+                
+                # Отключаем объявление только если оно активно
+                if ad_status.lower() == 'active':
+                    logger.info(f"Отключаем объявление {ad_id}")
+                    disable_result = fb_client.disable_ad(ad_id)
+                    
+                    # Функция disable_ad возвращает True/False, а не словарь
+                    if disable_result is True:
+                        logger.info(f"Объявление {ad_id} успешно отключено")
+                        ads_disabled += 1
+                        # Обновляем статус в результате
+                        ad_status = 'PAUSED'
+                    else:
+                        logger.error(f"Ошибка при отключении объявления {ad_id}")
+                
+            # Формируем результат для объявления
+            result = {
+                'ad_id': ad_id,
+                'ad_name': ad_name,
+                'ref': ref,
+                'spend': spend,
+                'conversions': conversions,
+                'status': ad_status,
+                'passed': passed,
+                'reason': reason
+            }
+            
+            # Добавляем результат в общий список и в соответствующую категорию
+            insights_results.append(result)
+            if passed:
+                passed_ads.append(result)
+            else:
+                failed_ads.append(result)
         
-        return {
-            "campaign": campaign,
-            "results": results
+        # Формируем итоговый результат
+        result = {
+            'campaign_id': campaign_id,
+            'setup_id': setup_id,
+            'setup_spend': setup_spend,
+            'setup_conversions': setup_conversions,
+            'check_period': check_period,
+            'date_from': date_from,
+            'date_to': date_to,
+            'ads_checked': len(ads),
+            'ads_disabled': ads_disabled,
+            'ads_results': insights_results,
+            'passed_ads': passed_ads,
+            'failed_ads': failed_ads
         }
-    
+        
+        logger.info(f"Проверка завершена. Проверено {len(ads)} объявлений, отключено {ads_disabled}")
+        
+        return result
+        
     except Exception as e:
-        logging.error(f"Ошибка при проверке кампании {campaign_id}: {str(e)}")
-        return {"error": f"Ошибка при проверке кампании: {str(e)}"}
+        import traceback
+        error_trace = traceback.format_exc()
+        
+        # Логируем ошибку
+        app_logger = logging.getLogger('app')
+        app_logger.error(f"Ошибка при проверке кампании {campaign_id}: {str(e)}")
+        app_logger.error(error_trace)
+        
+        return {'error': str(e)}
 
 def create_fb_client_for_user(user):
     """
@@ -198,3 +316,83 @@ def create_fb_client_for_user(user):
             )
         
         return fb_client 
+
+def schedule_campaign_checks():
+    """
+    Запускает проверку всех активных кампаний с учетом настроенных интервалов.
+    Эта функция должна быть вызвана периодически (например, раз в минуту).
+    """
+    try:
+        logger = logging.getLogger('app')
+        logger.info("Запуск планового обхода кампаний для проверки")
+        
+        # Импортируем модели
+        from app.models.setup import Setup, CampaignSetup
+        from datetime import datetime, timedelta
+        
+        # Получаем все активные кампании, привязанные к активным сетапам
+        campaign_setups = (
+            CampaignSetup.query
+            .join(Setup, CampaignSetup.setup_id == Setup.id)
+            .filter(CampaignSetup.is_active == True)
+            .filter(Setup.is_active == True)
+            .all()
+        )
+        
+        logger.info(f"Найдено {len(campaign_setups)} активных кампаний для проверки")
+        
+        now = datetime.utcnow()
+        campaigns_checked = 0
+        
+        # Проверяем каждую кампанию
+        for cs in campaign_setups:
+            # Получаем настройки
+            setup = Setup.query.get(cs.setup_id)
+            if not setup:
+                logger.warning(f"Не найдены настройки для кампании {cs.campaign_id}")
+                continue
+                
+            # Проверяем, прошло ли достаточно времени с момента последней проверки
+            interval_minutes = setup.check_interval or 30  # По умолчанию 30 минут
+            
+            if cs.last_checked:
+                next_check_time = cs.last_checked + timedelta(minutes=interval_minutes)
+                if now < next_check_time:
+                    # Еще не время для проверки
+                    continue
+            
+            # Запускаем проверку кампании
+            logger.info(f"Запуск проверки кампании {cs.campaign_id} с интервалом {interval_minutes} минут")
+            
+            try:
+                # Выполняем проверку
+                check_period = setup.check_period or 'today'
+                result = check_campaign_thresholds(cs.campaign_id, cs.setup_id, check_period)
+                
+                # Обновляем время последней проверки
+                cs.last_checked = now
+                
+                # Проверяем результат
+                if 'error' in result:
+                    logger.error(f"Ошибка при проверке кампании {cs.campaign_id}: {result['error']}")
+                else:
+                    logger.info(f"Проверка кампании {cs.campaign_id} завершена: проверено {result.get('ads_checked', 0)} объявлений, отключено {result.get('ads_disabled', 0)}")
+                    campaigns_checked += 1
+                
+            except Exception as check_error:
+                logger.error(f"Ошибка при проверке кампании {cs.campaign_id}: {str(check_error)}")
+                # Обновляем время последней проверки даже при ошибке, чтобы избежать повторных ошибок
+                cs.last_checked = now
+                
+        # Сохраняем изменения в базе данных после всех проверок
+        from app.extensions import db
+        db.session.commit()
+        
+        logger.info(f"Завершено {campaigns_checked} проверок кампаний")
+        
+    except Exception as e:
+        logger = logging.getLogger('app')
+        logger.error(f"Ошибка при выполнении schedule_campaign_checks: {str(e)}")
+        
+        import traceback
+        logger.error(traceback.format_exc()) 

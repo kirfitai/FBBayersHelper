@@ -510,31 +510,58 @@ def check_campaign_setup(id):
 @bp.route('/campaigns/check/<string:campaign_id>', methods=['GET', 'POST'])
 @login_required
 def check_campaign(campaign_id):
-    # Устанавливаем период проверки по умолчанию
-    check_period = request.args.get('check_period', 'today')
+    # Получаем настройки кампании
+    campaign_setup = CampaignSetup.query.filter_by(campaign_id=campaign_id).first()
+    
+    if not campaign_setup:
+        flash('Настройки для кампании не найдены', 'danger')
+        return redirect(url_for('main.campaigns'))
+    
+    # Получаем настройки и берем период проверки из них
+    setup = Setup.query.get(campaign_setup.setup_id)
+    
+    if not setup:
+        flash('Настройки сетапа не найдены', 'danger')
+        return redirect(url_for('main.campaigns'))
+    
+    check_period = setup.check_period
     
     try:
-        # Выполняем проверку кампании с использованием функции check_campaign_thresholds
-        results = scheduler.check_campaign_thresholds(campaign_id, check_period)
+        # Создаем клиент Facebook API
+        fb_client = create_fb_client_for_user(current_user)
         
-        # Проверяем результаты на наличие ошибок
-        if not results or 'error' in results:
-            error_msg = results.get('error', 'Unknown error') if results else 'No results returned'
-            app.logger.error(f"Error checking campaign {campaign_id}: {error_msg}")
-            flash(f'Error checking campaign: {error_msg}', 'danger')
+        # Получаем информацию о кампании
+        campaign = fb_client.get_campaign(campaign_id) if fb_client else {}
+        
+        if request.method == 'POST':
+            # Выполняем проверку кампании с использованием функции check_campaign_thresholds
+            results = scheduler.check_campaign_thresholds(campaign_id, campaign_setup.setup_id, check_period)
+            
+            # Проверяем результаты на наличие ошибок
+            if not results or 'error' in results:
+                error_msg = results.get('error', 'Unknown error') if results else 'No results returned'
+                app.logger.error(f"Error checking campaign {campaign_id}: {error_msg}")
+                flash(f'Ошибка при проверке кампании: {error_msg}', 'danger')
+                return render_template('campaigns/check_report.html', 
+                                      error=error_msg,
+                                      campaign_id=campaign_id)
+            
+            # Отображаем результаты
             return render_template('campaigns/check_report.html', 
-                                  error=error_msg,
-                                  campaign_id=campaign_id)
-        
-        # Отображаем результаты
-        return render_template('campaigns/check_report.html', 
-                              campaign=results.get('campaign', {}),
-                              results=results.get('results', []),
-                              check_period=check_period)
+                                  campaign=campaign,
+                                  results=results.get('ads_results', []),
+                                  setup=setup,
+                                  check_period=check_period)
+        else:
+            # Для GET запроса просто отображаем страницу с настройками
+            return render_template('campaigns/check_report.html', 
+                                  campaign=campaign,
+                                  setup=setup,
+                                  check_period=check_period)
     
     except Exception as e:
         app.logger.error(f"Error checking campaign {campaign_id}: {str(e)}")
-        flash(f'Error checking campaign: {str(e)}', 'danger')
+        flash(f'Ошибка при проверке кампании: {str(e)}', 'danger')
         return render_template('campaigns/check_report.html', 
                               error=str(e),
                               campaign_id=campaign_id)

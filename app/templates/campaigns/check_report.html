@@ -55,7 +55,7 @@
     <h1 class="my-4">Проверка кампании</h1>
     
     {% if error %}
-    <div class="error-message">
+    <div class="alert alert-danger">
         <h4>Ошибка:</h4>
         <p>{{ error }}</p>
     </div>
@@ -63,32 +63,39 @@
     
     <div class="card mb-4">
         <div class="card-header">
-            <h5>Настройки проверки</h5>
+            <h5>Информация о проверке</h5>
         </div>
         <div class="card-body">
-            <form id="checkForm" method="POST">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                
-                <div class="form-group">
-                    <label for="check_period">Период проверки:</label>
-                    <select class="form-control" id="check_period" name="check_period">
-                        <option value="today" {% if check_period == 'today' %}selected{% endif %}>Сегодня</option>
-                        <option value="yesterday" {% if check_period == 'yesterday' %}selected{% endif %}>Вчера</option>
-                        <option value="last_3_days" {% if check_period == 'last_3_days' %}selected{% endif %}>Последние 3 дня</option>
-                        <option value="last_7_days" {% if check_period == 'last_7_days' %}selected{% endif %}>Последние 7 дней</option>
-                        <option value="last_14_days" {% if check_period == 'last_14_days' %}selected{% endif %}>Последние 14 дней</option>
-                        <option value="last_30_days" {% if check_period == 'last_30_days' %}selected{% endif %}>Последние 30 дней</option>
-                        <option value="this_month" {% if check_period == 'this_month' %}selected{% endif %}>Этот месяц</option>
-                        <option value="last_month" {% if check_period == 'last_month' %}selected{% endif %}>Прошлый месяц</option>
-                    </select>
-                </div>
-                
-                <button type="submit" class="btn btn-primary">Проверить кампанию</button>
-            </form>
+            {% if setup %}
+            <p><strong>Настройка проверки:</strong> {{ setup.name }}</p>
+            <p><strong>Период проверки:</strong> 
+                {% if check_period == 'today' %}
+                    Сегодня
+                {% elif check_period == 'yesterday' %}
+                    Вчера
+                {% elif check_period == 'last2days' %}
+                    Последние 2 дня
+                {% elif check_period == 'last3days' %}
+                    Последние 3 дня  
+                {% elif check_period == 'last7days' %}
+                    Последние 7 дней
+                {% elif check_period == 'alltime' %}
+                    Всё время
+                {% else %}
+                    {{ check_period }}
+                {% endif %}
+            </p>
+            <p><strong>Интервал проверки:</strong> {{ setup.check_interval }} минут</p>
+            {% endif %}
+            
+            <button type="button" id="checkButton" class="btn btn-primary">Запустить проверку</button>
         </div>
     </div>
     
-    <div id="loader" class="loader"></div>
+    <div id="loaderContainer" class="loader-container">
+        <div class="loader"></div>
+        <p>Проверка кампании, пожалуйста подождите...</p>
+    </div>
     
     <div id="resultsContainer" class="results-container">
         {% if campaign %}
@@ -142,25 +149,31 @@
 {% endblock %}
 
 {% block scripts %}
-<script src="{{ url_for('static', filename='js/campaign_checker.js') }}"></script>
 <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Обработка отправки формы
-        document.getElementById('checkForm').addEventListener('submit', function(e) {
-            e.preventDefault();
-            
-            const campaignId = "{{ campaign_id if campaign_id else campaign.id if campaign }}";
-            const checkPeriod = document.getElementById('check_period').value;
-            
+        const checkButton = document.getElementById('checkButton');
+        const loaderContainer = document.getElementById('loaderContainer');
+        const resultsContainer = document.getElementById('resultsContainer');
+        
+        // Если есть результаты, показываем их сразу
+        {% if results %}
+        resultsContainer.style.display = 'block';
+        {% endif %}
+        
+        checkButton.addEventListener('click', function() {
             // Показываем индикатор загрузки
-            document.getElementById('loaderContainer').style.display = 'block';
-            document.getElementById('resultsContainer').style.display = 'none';
+            loaderContainer.style.display = 'block';
+            resultsContainer.style.display = 'none';
+            checkButton.disabled = true;
             
-            // Выполняем AJAX запрос
-            fetch(`/campaigns/check/${campaignId}?check_period=${checkPeriod}`, {
-                method: 'GET',
+            // Выполняем запрос на проверку кампании
+            const campaignId = "{{ campaign_id if campaign_id else campaign.id if campaign }}";
+            
+            fetch(`/campaigns/check/${campaignId}`, {
+                method: 'POST',
                 headers: {
-                    'Accept': 'text/html'
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': '{{ csrf_token() }}'
                 }
             })
             .then(response => {
@@ -170,26 +183,16 @@
                 return response.text();
             })
             .then(html => {
-                const resultsContainer = document.getElementById('resultsContainer');
-                resultsContainer.innerHTML = html;
-                resultsContainer.style.display = 'block';
-                
-                // Если есть результаты, скрываем форму
-                if (resultsContainer.querySelector('table tbody tr')) {
-                    document.getElementById('checkForm').style.display = 'none';
-                }
+                // Обновляем страницу с новыми результатами
+                window.location.reload();
             })
             .catch(error => {
-                const errorDiv = document.createElement('div');
-                errorDiv.className = 'error-message';
-                errorDiv.textContent = 'Ошибка при проверке кампании: ' + error.message;
-                
-                const loaderContainer = document.getElementById('loaderContainer');
-                loaderContainer.parentNode.insertBefore(errorDiv, loaderContainer.nextSibling);
+                alert('Ошибка при проверке кампании: ' + error.message);
             })
             .finally(() => {
                 // Скрываем индикатор загрузки
-                document.getElementById('loaderContainer').style.display = 'none';
+                loaderContainer.style.display = 'none';
+                checkButton.disabled = false;
             });
         });
     });
